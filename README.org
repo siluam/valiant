@@ -1,0 +1,5 @@
+* thanos
+
+#+begin_quote
+Fine. I'll do it myself.
+#+end_quote

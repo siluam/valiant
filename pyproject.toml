@@ -1,0 +1,21 @@
+[tool.poetry]
+name = "thanos"
+version = "1.0.0.0"
+description = "Fine. I'll do it myself."
+authors = ["sylvorg <jeet.ray@syvl.org>"]
+license = "OREO"
+include = [ "thanos/**/*.py", ]
+
+[tool.poetry.dependencies]
+python = "^3.9"
+addict = "*"
+click = "*"
+
+[tool.poetry.dev-dependencies]
+pytest = "^3.0"
+poetry = "*"
+poetry2setup = "*"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
