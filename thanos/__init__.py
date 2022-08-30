@@ -9,11 +9,14 @@ from subprocess import Popen, PIPE
 
 output = namedtuple("output", "stdout stderr returncode")
 
-def run(command, stdout = PIPE):
+def run(command, stdout = None):
     p = Popen(command, shell = True, stdout = stdout, stderr = PIPE)
     p.wait()
     if stdout:
         return output(TextIOWrapper(p.stdout).read(), TextIOWrapper(p.stderr).read(), p.returncode)
+
+def get(command):
+    return run(command, stdout = PIPE)
 
 class gauntlet:
     def __init__(self, directory):
@@ -21,8 +24,8 @@ class gauntlet:
         self.sir = str(self.dir)
         self.preFiles = " ".join(f"{self.dir}/{file}" for file in ("nix.org", "flake.org", "tests.org", "README.org"))
         self.removeTangleBackups = f"find {self.dir} -name '.\#*.org*' -print | xargs rm &> /dev/null || :"
-        self.projectName = run(self.preFallback(f"nix eval --show-trace --impure --expr '(import {self.dir}).pname")).stdout
-        self.type = run(self.preFallback(f"nix eval --show-trace --impure --expr '(import {self.dir}).type")).stdout
+        self.projectName = get(self.preFallback(f"nix eval --show-trace --impure --expr '(import {self.dir}).pname")).stdout
+        self.type = get(self.preFallback(f"nix eval --show-trace --impure --expr '(import {self.dir}).type")).stdout
         self.files = f"{self.preFiles} {self.dir}/{self.projectName}"
         self.updateCommand = self.fallback(f"nix flake update --show-trace {self.dir}")
 
@@ -146,7 +149,7 @@ def tu(ctx, local_files, tangle_files, all_files, inputs, all_inputs):
 @click.pass_context
 def develop(ctx, devshell, local_files, tangle_files, all_files, inputs, all_inputs):
     ctx.invoke(tu, local_files = local_files, tangle_files = tangle_files, all_files = all_files, inputs = inputs, all_inputs = all_inputs)
-    run(f'nix develop --show-trace "{ctx.obj.cls.dir}#{devshell or f"makefile-{ctx.obj.cls.type}"}"', stdout = None)
+    run(f'nix develop --show-trace "{ctx.obj.cls.dir}#{devshell or f"makefile-{ctx.obj.cls.type}"}"')
 
 if __name__ == "__main__":
    main(obj=Dict(dict()))
