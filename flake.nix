@@ -122,5 +122,6 @@
         });
     in overlayset // outputs // {
         inherit callPackage python pname type;
+        testType = "python";
     } // (listToAttrs (map (system: nameValuePair system (mapAttrs (n: v: v.${system}) outputs)) workingSystems));
 }

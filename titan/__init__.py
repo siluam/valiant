@@ -44,7 +44,8 @@ class gauntlet:
         self.inputs = literal_eval(literal_eval(self.getPreFallback(f"""nix eval --show-trace --impure --expr 'with (import {self.dir}); with inputs.nixpkgs.lib; "[ \\"" + (concatStringsSep "\\", \\"" (attrNames inputs)) + "\\" ]"'""").stdout))
         self.currentSystem = self.getPreFallback("nix eval --show-trace --impure --expr builtins.currentSystem").stdout.strip('"')
         self.doCheck = literal_eval(self.getPreFallback(f"nix eval --show-trace --impure --expr '(import {self.dir}).packages.{self.currentSystem}.default.doCheck'").stdout.capitalize())
-        self.test = self.doCheck or (self.type != "general")
+        self.testType = self.getPreFallback(f"nix eval --show-trace --impure --expr '(import {self.dir}).testType'").stdout.strip('"')
+        self.doTest = self.doCheck or ((self.type != "general") and (self.testType != "general"))
 
     def fallbackCommand(self, command, files):
         return f"""
@@ -89,8 +90,10 @@ class gauntlet:
             fi
         """
 
-    def pytest(self, *args, _type = None):
-        return self.nixShell("pytest", *args, "--suppress-no-test-exit-code", self.dir, _type = _type)
+    def test(self, *args, _type = None):
+        match self.testType:
+            case "python": return self.nixShell("pytest", *args, "--suppress-no-test-exit-code", self.dir, _type = _type)
+            case _: return None
 
 @click.group()
 @click.option("-d", "--directory", default = Path.cwd(), type = Path)
@@ -286,7 +289,7 @@ def quick(ctx, local_files, tangle_files, all_files, inputs, all_inputs):
 @click.option("-a", "--all-inputs", is_flag = True)
 @click.pass_context
 def super(ctx, test, local_files, tangle_files, all_files, inputs, all_inputs):
-    ctx.invoke(_tut if ctx.obj.cls.test and test else _tu, local_files = local_files, tangle_files = tangle_files, all_files = all_files, inputs = inputs, all_inputs = all_inputs)
+    ctx.invoke(_tut if ctx.obj.cls.doTest and test else _tu, local_files = local_files, tangle_files = tangle_files, all_files = all_files, inputs = inputs, all_inputs = all_inputs)
     ctx.invoke(push)
 
 @main.command()
@@ -326,7 +329,7 @@ def _tut(ctx, local_files, tangle_files, all_files, inputs, all_inputs):
 @click.pass_context
 def _test(ctx, args, local_files, tangle_files, all_files, inputs, all_inputs):
     ctx.invoke(_tut, local_files = local_files, tangle_files = tangle_files, all_files = all_files, inputs = inputs, all_inputs = all_inputs)
-    run(ctx.obj.cls.pytest(*args))
+    run(ctx.obj.cls.test(*args))
 
 @main.command(name = "test-native")
 @click.argument("args", nargs = -1, required = False)
