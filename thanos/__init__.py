@@ -25,8 +25,8 @@ def run(command, stdout = None, stderr = STDOUT, ignore_stderr = False):
             stderr = TextIOWrapper(p.stderr).read().strip() if p.stderr else None,
         )
 
-def get(command, stderr = STDOUT, ignore_stderr = False):
-    return run(command, stdout = PIPE, stderr = stderr, ignore_stderr = ignore_stderr)
+def get(command, ignore_stderr = False):
+    return run(command, stdout = PIPE, stderr = PIPE, ignore_stderr = ignore_stderr)
 
 def escapeQuotes(string):
     return string.replace('"', '\\"').replace("'", "\\'")
