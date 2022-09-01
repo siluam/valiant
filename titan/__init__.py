@@ -37,14 +37,14 @@ class gauntlet:
         self.sir = str(self.dir)
         self.preFiles = " ".join(f"{self.dir}/{file}" for file in ("nix.org", "flake.org", "tests.org", "README.org"))
         self.removeTangleBackups = f"find {self.dir} -name '.\#*.org*' -print | xargs rm &> /dev/null || :"
-        self.projectName = self.getPreFallback(f"nix eval --show-trace --impure --expr '(import {self.dir}).pname'").stdout.strip('"')
-        self.type = self.getPreFallback(f"nix eval --show-trace --impure --expr '(import {self.dir}).type'").stdout.strip('"')
+        self.projectName = self.getPFbWQ(f"nix eval --show-trace --impure --expr '(import {self.dir}).pname'")
+        self.type = self.getPFbWQ(f"nix eval --show-trace --impure --expr '(import {self.dir}).type'")
         self.files = f"{self.preFiles} {self.dir}/{self.projectName}"
         self.updateCommand = self.fallback(f"nix flake update --show-trace {self.dir}")
         self.inputs = literal_eval(literal_eval(self.getPreFallback(f"""nix eval --show-trace --impure --expr 'with (import {self.dir}); with inputs.nixpkgs.lib; "[ \\"" + (concatStringsSep "\\", \\"" (attrNames inputs)) + "\\" ]"'""").stdout))
-        self.currentSystem = self.getPreFallback("nix eval --show-trace --impure --expr builtins.currentSystem").stdout.strip('"')
+        self.currentSystem = self.getPFbWQ("nix eval --show-trace --impure --expr builtins.currentSystem")
         self.doCheck = literal_eval(self.getPreFallback(f"nix eval --show-trace --impure --expr '(import {self.dir}).packages.{self.currentSystem}.default.doCheck'").stdout.capitalize())
-        self.testType = self.getPreFallback(f"nix eval --show-trace --impure --expr '(import {self.dir}).testType'").stdout.strip('"')
+        self.testType = self.getPFbWQ(f"nix eval --show-trace --impure --expr '(import {self.dir}).testType'")
         self.doTest = self.doCheck or ((self.type != "general") and (self.testType != "general"))
 
     def fallbackCommand(self, command, files):
@@ -62,6 +62,9 @@ class gauntlet:
 
     def getPreFallback(self, command, ignore_stderr = False):
         return get(self.preFallback(command), ignore_stderr = ignore_stderr)
+
+    def getPFbWQ(self, command, ignore_stderr = False):
+        return get(self.preFallback(command), ignore_stderr = ignore_stderr).stdout.strip('"')
 
     def nixShell(self, *args, _type = None):
         return f"""nix-shell -E '(import {self.dir}).devShells.{self.currentSystem}.makefile-{_type or self.type}' --show-trace --run "{escapeQuotes(' '.join(args))}" """
