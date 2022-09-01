@@ -62,7 +62,7 @@ class gauntlet:
     def getPreFallback(self, command, ignore_stderr = False):
         return get(self.preFallback(command), ignore_stderr = ignore_stderr)
 
-    def nixShell(self, /, _type = None, *args):
+    def nixShell(self, *args, _type = None):
         return f"""nix-shell -E '(import {self.dir}).devShells.{self.currentSystem}.makefile-{_type or self.type}' --show-trace --run "{escapeQuotes(' '.join(args))}" """
 
     def quickShell(self, pkgs):
@@ -71,7 +71,7 @@ class gauntlet:
     def quickRun(self, pkgs, *args):
         return self.quickShell(pkgs) + f""" --run "{escapeQuotes(' '.join(args))}" """
 
-    def nixShellInDir(self, /, _type = None, *args):
+    def nixShellInDir(self, *args, _type = None):
         return self.nixShell("cd", self.dir, "&& (", *args[:-1], args[-1] + ")", _type = _type)
 
     def quickRunInDir(self, pkgs, *args):
@@ -89,7 +89,7 @@ class gauntlet:
             fi
         """
 
-    def pytest(self, /, _type = None, *args):
+    def pytest(self, *args, _type = None):
         return self.nixShell("pytest", *args, "--suppress-no-test-exit-code", self.dir, _type = _type)
 
 @click.group()
