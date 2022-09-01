@@ -72,48 +72,51 @@
             defaultOverlay = overlay;
         };
         mkApp = name: drv: { type = "app"; program = "${drv}${drv.passthru.exePath or "/bin/${drv.meta.mainprogram or drv.executable or drv.pname or drv.name or name}"}"; };
-    in overlayset // (eachSystem workingSystems (system: rec {
-        pkgs = import nixpkgs {
-            overlays = attrValues overlayset.overlays;
-            inherit system;
-            allowUnfree = true;
-            allowBroken = true;
-            allowUnsupportedSystem = true;
-            # preBuild = ''
-            #     makeFlagsArray+=(CFLAGS="-w")
-            #     buildFlagsArray+=(CC=cc)
-            # '';
-            permittedInsecurePackages = [
-                "python2.7-cryptography-2.9.2"
-            ];
-        };
-        legacyPackages = pkgs;
-        packages = flattenTree (rec {
-            python = pkgs.${self.python}.withPackages (ppkgs: [ ppkgs.${pname} ]);
-            python3 = python;
-            ${self.python} = python;
-            default = pkgs.${pname};
-            ${pname} = default;
-        });
-        package = packages.default;
-        defaultPackage = package;
-        apps = mapAttrs mkApp packages;
-        app = apps.default;
-        defaultApp = app;
-        devShells = let
-            makefile = pkgs.mkShell rec {
-                buildInputs = unique (attrValues packages);
-                nativeBuildInputs = buildInputs;
+        outputs = eachSystem workingSystems (system: rec {
+            pkgs = import nixpkgs {
+                overlays = attrValues overlayset.overlays;
+                inherit system;
+                allowUnfree = true;
+                allowBroken = true;
+                allowUnsupportedSystem = true;
+                # preBuild = ''
+                #     makeFlagsArray+=(CFLAGS="-w")
+                #     buildFlagsArray+=(CC=cc)
+                # '';
+                permittedInsecurePackages = [
+                    "python2.7-cryptography-2.9.2"
+                ];
             };
-        in (mapAttrs (n: v: pkgs.mkShell rec {
-            buildInputs = [ v ];
-            nativeBuildInputs = buildInputs;
-        }) packages) // (rec {
-            inherit makefile;
-            makefile-general = makefile;
-            "makefile-${type}" = makefile;
+            legacyPackages = pkgs;
+            packages = flattenTree (rec {
+                python = pkgs.${self.python}.withPackages (ppkgs: [ ppkgs.${pname} ]);
+                python3 = python;
+                ${self.python} = python;
+                default = pkgs.${pname};
+                ${pname} = default;
+            });
+            package = packages.default;
+            defaultPackage = package;
+            apps = mapAttrs mkApp packages;
+            app = apps.default;
+            defaultApp = app;
+            devShells = let
+                makefile = pkgs.mkShell rec {
+                    buildInputs = unique (attrValues packages);
+                    nativeBuildInputs = buildInputs;
+                };
+            in (mapAttrs (n: v: pkgs.mkShell rec {
+                buildInputs = [ v ];
+                nativeBuildInputs = buildInputs;
+            }) packages) // (rec {
+                inherit makefile;
+                makefile-general = makefile;
+                "makefile-${type}" = makefile;
+            });
+            devShell = devShells.default;
+            defaultDevShell = devShell;
         });
-        devShell = devShells.default;
-        defaultDevShell = devShell;
-    })) // { inherit callPackage python pname type; };
+    in overlayset // outputs // {
+        inherit callPackage python pname type;
+    } // (listToAttrs (map (system: nameValuePair system (mapAttrs (n: v: v.${system}) (filterAttrs (n: v: elem n workingSystems) outputs))) workingSystems));
 }
