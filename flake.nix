@@ -57,13 +57,17 @@
         }));
         overlayset = let
             overlay = final: prev: { ${pname} = final.callPackage callApplication {}; };
+            python = final: prev: { ${self.python} = prev.${self.python}.override (super: {
+                packageOverrides = composeExtensions (super.packageOverrides or (_: _: {})) (new: old: {
+                    ${pname} = new.callPackage callPackage {  };
+                });
+            }); };
         in {
             overlays = rec {
-                ${self.python} = final: prev: { ${self.python} = prev.${self.python}.override (super: {
-                    packageOverrides = composeExtensions (super.packageOverrides or (_: _: {})) (new: old: {
-                        ${pname} = new.callPackage callPackage {  };
-                    });
-                }); };
+                inherit python;
+                python3 = python;
+                ${self.python} = python;
+                "python3-${pname}" = python;
                 Python = final: prev: { Python = final.${self.python}; };
                 ${pname} = overlay;
                 default = overlay;
