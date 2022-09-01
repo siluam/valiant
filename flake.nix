@@ -10,6 +10,11 @@
     };
     outputs = inputs@{ self, nixpkgs, flake-utils, ... }: with builtins; with nixpkgs.lib; with flake-utils.lib; let
         pname = "thanos";
+        type = "python3";
+        workingSystems = subtractLists (flatten [
+            (filter (system: hasPrefix "mips" system) allSystems)
+            "x86_64-solaris"
+        ]) allSystems;
         callPackage = { buildPythonPackage, pythonOlder, poetry-core, addict, click, makePythonPath }: buildPythonPackage rec {
             inherit pname;
             version = "1.0.0.0";
@@ -67,9 +72,22 @@
             defaultOverlay = overlay;
         };
         mkApp = name: drv: { type = "app"; program = "${drv}${drv.passthru.exePath or "/bin/${drv.meta.mainprogram or drv.executable or drv.pname or drv.name or name}"}"; };
-    in overlayset // (eachSystem allSystems (system: rec {
-        legacyPackages = import nixpkgs { overlays = attrValues overlayset.overlays; inherit system; };
-        pkgs = legacyPackages;
+    in overlayset // (eachSystem workingSystems (system: rec {
+        pkgs = import nixpkgs {
+            overlays = attrValues overlayset.overlays;
+            inherit system;
+            allowUnfree = true;
+            allowBroken = true;
+            allowUnsupportedSystem = true;
+            # preBuild = ''
+            #     makeFlagsArray+=(CFLAGS="-w")
+            #     buildFlagsArray+=(CC=cc)
+            # '';
+            permittedInsecurePackages = [
+                "python2.7-cryptography-2.9.2"
+            ];
+        };
+        legacyPackages = pkgs;
         packages = flattenTree (rec {
             python = pkgs.${self.python}.withPackages (ppkgs: [ ppkgs.${pname} ]);
             python3 = python;
@@ -82,11 +100,20 @@
         apps = mapAttrs mkApp packages;
         app = apps.default;
         defaultApp = app;
-        devShells = mapAttrs (n: v: pkgs.mkShell rec {
+        devShells = let
+            makefile = pkgs.mkShell rec {
+                buildInputs = unique (attrValues packages);
+                nativeBuildInputs = buildInputs;
+            };
+        in (mapAttrs (n: v: pkgs.mkShell rec {
             buildInputs = [ v ];
             nativeBuildInputs = buildInputs;
-        }) packages;
+        }) packages) // (rec {
+            inherit makefile;
+            makefile-general = makefile;
+            "makefile-${type}" = makefile;
+        });
         devShell = devShells.default;
         defaultDevShell = devShell;
-    })) // { inherit callPackage python; };
+    })) // { inherit callPackage python pname type; };
 }
