@@ -135,8 +135,6 @@ def update(ctx, inputs, all_inputs):
             inputs.remove("settings")
         if inputs and (intersection := set(ctx.obj.cls.inputs).intersection(inputs)):
             run(ctx.obj.cls.fallback(f'nix flake lock {ctx.obj.cls.dir} --show-trace --update-input {"--update-input ".join(intersection)}'))
-        else:
-            run(command)
     elif all_inputs:
         run(ctx.obj.cls.updateCommand)
     elif ctx.obj.cls.projectName == "settings":
