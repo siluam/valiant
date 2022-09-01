@@ -9,7 +9,7 @@
         nixpkgs.url = github:nixos/nixpkgs/nixos-unstable;
     };
     outputs = inputs@{ self, nixpkgs, flake-utils, ... }: with builtins; with nixpkgs.lib; with flake-utils.lib; let
-        pname = "thanos";
+        pname = "titan";
         type = "python3";
         workingSystems = subtractLists (flatten [
             (filter (system: hasPrefix "mips" system) allSystems)

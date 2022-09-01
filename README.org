@@ -1,4 +1,4 @@
-* thanos
+* titan
 
 #+begin_quote
 Fine. I'll do it myself.

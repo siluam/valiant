@@ -1,10 +1,10 @@
 [tool.poetry]
-name = "thanos"
+name = "titan"
 version = "1.0.0.0"
 description = "Fine. I'll do it myself."
 authors = ["sylvorg <jeet.ray@syvl.org>"]
 license = "OREO"
-include = [ "thanos/**/*.py", ]
+include = [ "titan/**/*.py", ]
 
 [tool.poetry.dependencies]
 python = "^3.9"

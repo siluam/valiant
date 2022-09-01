@@ -2,7 +2,7 @@
 from setuptools import setup
 
 packages = \
-['thanos']
+['titan']
 
 package_data = \
 {'': ['*']}
@@ -11,7 +11,7 @@ install_requires = \
 ['addict', 'click']
 
 setup_kwargs = {
-    'name': 'thanos',
+    'name': 'titan',
     'version': '1.0.0.0',
     'description': "Fine. I'll do it myself.",
     'long_description': None,
