@@ -122,5 +122,5 @@
         });
     in overlayset // outputs // {
         inherit callPackage python pname type;
-    } // (listToAttrs (map (system: nameValuePair system (mapAttrs (n: v: v.${system}) (filterAttrs (n: v: elem n workingSystems) outputs))) workingSystems));
+    } // (listToAttrs (map (system: nameValuePair system (mapAttrs (n: v: v.${system}) outputs)) workingSystems));
 }
