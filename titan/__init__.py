@@ -20,7 +20,25 @@ output = namedtuple("output", "stdout stderr returncode")
 def escapeQuotes(string):
     return str(string).replace('"', '\\"').replace("'", "\\'")
 
-class gauntlet:
+class Gauntlet:
+    __slots__ = (
+        "dir",
+        "sir",
+        "verbose",
+        "console",
+        "status",
+        "preFiles",
+        "removeTangleBackups",
+        "projectName",
+        "type",
+        "files",
+        "updateCommand",
+        "inputs",
+        "currentSystem",
+        "doCheck",
+        "testType",
+        "doTest",
+    )
     def __init__(self, directory, verbose):
         self.dir = directory
         self.sir = str(self.dir)
@@ -57,7 +75,7 @@ class gauntlet:
             if self.verbose:
                 verboseCommand = "\n".join(("           " + line) if index else line for index, line in enumerate(command.split("\n")))
                 self.console.log(f"Subprocessing Command: {verboseCommand}")
-            with self.pauseStatus(any(cmd in command for cmd in (
+            with self.pauseStatus(stdout is None and any(cmd in command for cmd in (
                 "org-tangle",
                 "nix flake update",
                 "nix flake lock",
@@ -138,80 +156,91 @@ class gauntlet:
 @click.pass_context
 def main(ctx, directory, verbose):
     ctx.ensure_object(dict)
-    ctx.obj.cls = gauntlet(directory = directory, verbose = verbose)
+    ctx.obj.cls = Gauntlet(directory = directory, verbose = verbose)
 
 # Adapted from: https://github.com/pallets/click/issues/108#issuecomment-280489786
 
-def statusParams(func):
-    @click.option("--invoked", is_flag = True)
+def gauntletParams(func):
+    @click.option("--gauntlet")
     @wraps(func)
     def wrapper(*args, **kwargs):
         return func(*args, **kwargs)
     return wrapper
 
 @main.command()
+@gauntletParams
 @click.pass_context
-def add(ctx):
-    ctx.obj.cls.run(f"git -C {ctx.obj.cls.dir} add .")
+def add(ctx, gauntlet):
+    gauntlet = gauntlet or ctx.obj.cls
+    gauntlet.run(f"git -C {gauntlet.dir} add .")
 
 @main.command()
+@gauntletParams
 @click.pass_context
-def commit(ctx):
+def commit(ctx, gauntlet):
+    gauntlet = gauntlet or ctx.obj.cls
     ctx.invoke(add)
-    ctx.obj.cls.run(f'git -C {ctx.obj.cls.dir} commit --allow-empty-message -am ""', ignore_stderr = True)
+    gauntlet.run(f'git -C {gauntlet.dir} commit --allow-empty-message -am ""', ignore_stderr = True)
 
 @main.command()
+@gauntletParams
 @click.pass_context
-def push(ctx):
+def push(ctx, gauntlet):
+    gauntlet = gauntlet or ctx.obj.cls
     ctx.invoke(commit)
-    ctx.obj.cls.run(f"git -C {ctx.obj.cls.dir} push")
+    gauntlet.run(f"git -C {gauntlet.dir} push")
 
 @main.command()
+@gauntletParams
 @click.option("-i", "--inputs", multiple = True)
 @click.option("-a", "--all-inputs", is_flag = True)
 @click.pass_context
-def update(ctx, inputs, all_inputs):
+def update(ctx, gauntlet, inputs, all_inputs):
+    gauntlet = gauntlet or ctx.obj.cls
     ctx.invoke(add)
-    # command = "nix eval --impure --expr 'with (import " + ctx.obj.cls.sir + '); with pkgs.${builtins.currentSystem}.lib; "nix flake lock ' + ctx.obj.cls.sir + """
-    #      --update-input ${concatStringsSep " --update-input " (filter (input: ! ((elem input [ "nixos-master" "nixos-unstable" ]) || (hasSuffix "-small" input))) (attrNames inputs))}"' | tr -d '"')
-    # """
-    inputString = ' --update-input '.join(i for i in ctx.obj.cls.inputs if not ((i in (
+    inputString = ' --update-input '.join(i for i in gauntlet.inputs if not ((i in (
         'nixos-master',
         'nixos-unstable',
     )) or i.endswith('-small')))
-    command = f"nix flake lock {ctx.obj.cls.dir} --update-input {inputString}"
+    command = f"nix flake lock {gauntlet.dir} --update-input {inputString}"
     if inputs:
-        if ("settings" in inputs) and (ctx.obj.cls.projectName == "settings"):
+        if ("settings" in inputs) and (gauntlet.projectName == "settings"):
             inputs.remove("settings")
-        if inputs and (intersection := set(ctx.obj.cls.inputs).intersection(inputs)):
-            ctx.obj.cls.run(ctx.obj.cls.fallback(f'nix flake lock {ctx.obj.cls.dir} --show-trace --update-input {"--update-input ".join(intersection)}'))
+        if inputs and (intersection := set(gauntlet.inputs).intersection(inputs)):
+            gauntlet.run(gauntlet.fallback(f'nix flake lock {gauntlet.dir} --show-trace --update-input {"--update-input ".join(intersection)}'))
     elif all_inputs:
-        ctx.obj.cls.run(ctx.obj.cls.updateCommand)
-    elif ctx.obj.cls.projectName == "settings":
-        ctx.obj.cls.run(command)
+        gauntlet.run(gauntlet.updateCommand)
+    elif gauntlet.projectName == "settings":
+        gauntlet.run(command)
     else:
-        ctx.obj.cls.run(ctx.obj.cls.updateCommand)
+        gauntlet.run(gauntlet.updateCommand)
 
 @main.command()
+@gauntletParams
 @click.pass_context
-def pre_tangle(ctx):
+def pre_tangle(ctx, gauntlet):
+    gauntlet = gauntlet or ctx.obj.cls
     ctx.invoke(update, inputs = [ "settings" ])
-    ctx.obj.cls.run(ctx.obj.cls.removeTangleBackups)
+    gauntlet.run(gauntlet.removeTangleBackups)
 
 @main.command()
+@gauntletParams
 @click.option("-F", "--local-files", multiple = True, type = Path)
 @click.option("-f", "--tangle-files", multiple = True, type = Path)
 @click.option("-a", "--all-files", is_flag = True)
 @click.pass_context
-def tangle(ctx, local_files, tangle_files, all_files):
+def tangle(ctx, gauntlet, local_files, tangle_files, all_files):
+    gauntlet = gauntlet or ctx.obj.cls
     ctx.invoke(pre_tangle)
-    local_files = [ (ctx.obj.cls.dir / file) for file in local_files ]
+    local_files = [ (gauntlet.dir / file) for file in local_files ]
     tangle_files = list(tangle_files)
     if all_files:
-        ctx.obj.cls.run(ctx.obj.cls.tangleCommand(" ".join(tangle_files + local_files) + " " + ctx.obj.cls.files))
+        gauntlet.run(gauntlet.tangleCommand(" ".join(tangle_files + local_files) + " " + gauntlet.files))
     else:
-        ctx.obj.cls.run(ctx.obj.cls.tangleCommand(" ".join(tangle_files + local_files) or ctx.obj.cls.files))
+        gauntlet.run(gauntlet.tangleCommand(" ".join(tangle_files + local_files) or gauntlet.files))
     ctx.invoke(add)
+
+# Adapted from: https://github.com/pallets/click/issues/108#issuecomment-280489786
 
 def tuParams(func):
     @click.option("-F", "--local-files", multiple = True, default = [])
@@ -225,27 +254,33 @@ def tuParams(func):
     return wrapper
 
 @main.command(hidden = True)
+@gauntletParams
 @tuParams
 @click.pass_context
-def _tu(ctx, local_files, tangle_files, all_files, inputs, all_inputs):
+def _tu(ctx, gauntlet, local_files, tangle_files, all_files, inputs, all_inputs):
+    gauntlet = gauntlet or ctx.obj.cls
     ctx.invoke(tangle, local_files = local_files, tangle_files = tangle_files, all_files = all_files)
     ctx.invoke(update, inputs = inputs, all_inputs = all_inputs)
 
 @main.command()
+@gauntletParams
 @tuParams
 @click.option("-d", "--devshell")
 @click.pass_context
-def develop(ctx, devshell, local_files, tangle_files, all_files, inputs, all_inputs):
+def develop(ctx, gauntlet, devshell, local_files, tangle_files, all_files, inputs, all_inputs):
+    gauntlet = gauntlet or ctx.obj.cls
     ctx.invoke(_tu, local_files = local_files, tangle_files = tangle_files, all_files = all_files, inputs = inputs, all_inputs = all_inputs)
-    ctx.obj.cls.run(f'nix develop --show-trace "{ctx.obj.cls.dir}#{devshell or f"makefile-{ctx.obj.cls.type}"}"')
+    gauntlet.run(f'nix develop --show-trace "{gauntlet.dir}#{devshell or f"makefile-{gauntlet.type}"}"')
 
 @main.command()
+@gauntletParams
 @tuParams
 @click.option("-p", "--pkgs", multiple = True)
 @click.option("-P", "--pkg-string")
 @click.option("-w", "--with-pkgs", multiple = True)
 @click.pass_context
-def shell(ctx, pkgs, pkg_string, with_pkgs, local_files, tangle_files, all_files, inputs, all_inputs):
+def shell(ctx, gauntlet, pkgs, pkg_string, with_pkgs, local_files, tangle_files, all_files, inputs, all_inputs):
+    gauntlet = gauntlet or ctx.obj.cls
     if pkg_string:
         pass
     elif with_pkgs:
@@ -253,107 +288,174 @@ def shell(ctx, pkgs, pkg_string, with_pkgs, local_files, tangle_files, all_files
     else:
         pkg_string = " ".join(pkgs)
     ctx.invoke(_tu, local_files = local_files, tangle_files = tangle_files, all_files = all_files, inputs = inputs, all_inputs = all_inputs)
-    ctx.obj.cls.run(ctx.obj.cls.quickShell(pkg_string))
+    gauntlet.run(gauntlet.quickShell(pkg_string))
 
 @main.command()
+@gauntletParams
 @tuParams
 @click.pass_context
-def repl(ctx, local_files, tangle_files, all_files, inputs, all_inputs):
-    ctx.invoke(_tu, local_files = local_files, tangle_files = tangle_files, all_files = all_files, inputs = inputs, all_inputs = all_inputs)
-    ctx.obj.cls.run(ctx.obj.cls.nixShell(ctx.obj.cls.type))
+def repl(ctx, gauntlet, local_files, tangle_files, all_files, inputs, all_inputs):
+    gauntlet = gauntlet or ctx.obj.cls
+    ctx.forward(_tu)
+    gauntlet.run(gauntlet.nixShell(gauntlet.type))
 
 @main.command()
+@gauntletParams
 @tuParams
 @click.option("-p", "--pkgs", multiple = True, default = ("default",))
 @click.pass_context
-def build(ctx, pkgs, local_files, tangle_files, all_files, inputs, all_inputs):
+def build(ctx, gauntlet, pkgs, local_files, tangle_files, all_files, inputs, all_inputs):
+    gauntlet = gauntlet or ctx.obj.cls
     ctx.invoke(_tu, local_files = local_files, tangle_files = tangle_files, all_files = all_files, inputs = inputs, all_inputs = all_inputs)
-    ctx.obj.cls.run(f"""nix build --show-trace "{ctx.obj.cls.dir}#{f'" "{ctx.obj.cls.dir}#'.join(pkgs)}" """)
+    gauntlet.run(f"""nix build --show-trace "{gauntlet.dir}#{f'" "{gauntlet.dir}#'.join(pkgs)}" """)
 
 @main.command()
+@gauntletParams
 @tuParams
 @click.option("-c", "--command")
 @click.pass_context
-def cmd(ctx, command, local_files, tangle_files, all_files, inputs, all_inputs):
+def cmd(ctx, gauntlet, command, local_files, tangle_files, all_files, inputs, all_inputs):
+    gauntlet = gauntlet or ctx.obj.cls
     ctx.invoke(_tu, local_files = local_files, tangle_files = tangle_files, all_files = all_files, inputs = inputs, all_inputs = all_inputs)
-    ctx.obj.cls.run(ctx.obj.cls.nixShellInDir(escapeQuotes(command)))
+    gauntlet.run(gauntlet.nixShellInDir(escapeQuotes(command)))
 
 @main.command(name = "run", context_settings=dict(ignore_unknown_options=True))
+@gauntletParams
 @tuParams
 @click.argument("args", nargs = -1, required = False)
 @click.option("-s", "--arg-string")
 @click.option("-p", "--pkg", default = "default")
 @click.pass_context
-def _run(ctx, args, arg_string, pkg, local_files, tangle_files, all_files, inputs, all_inputs):
+def _run(ctx, gauntlet, args, arg_string, pkg, local_files, tangle_files, all_files, inputs, all_inputs):
+    gauntlet = gauntlet or ctx.obj.cls
     ctx.invoke(_tu, local_files = local_files, tangle_files = tangle_files, all_files = all_files, inputs = inputs, all_inputs = all_inputs)
-    ctx.obj.cls.run(f"""nix run --show-trace "{ctx.obj.cls.dir}#{pkg}" -- {arg_string or " ".join(args)}""")
+    gauntlet.run(f"""nix run --show-trace "{gauntlet.dir}#{pkg}" -- {arg_string or " ".join(args)}""")
 
 @main.command(name = "touch-test")
+@gauntletParams
 @tuParams
 @click.argument("test")
 @click.pass_context
-def touch_test(ctx, test, local_files, tangle_files, all_files, inputs, all_inputs):
+def touch_test(ctx, gauntlet, test, local_files, tangle_files, all_files, inputs, all_inputs):
+    gauntlet = gauntlet or ctx.obj.cls
     ctx.invoke(_tu, local_files = local_files, tangle_files = tangle_files, all_files = all_files, inputs = inputs, all_inputs = all_inputs)
     test = escapeQuotes(test)
-    ctx.obj.cls.run(ctx.obj.cls.nixShell("touch", test, "&&", ctx.obj.cls.type, test))
+    gauntlet.run(gauntlet.nixShell("touch", test, "&&", gauntlet.type, test))
 
 @main.command()
+@gauntletParams
 @click.option("-F", "--local-files", multiple = True, default = [])
 @click.option("-f", "--tangle-files", multiple = True, default = [])
 @click.option("-A", "--all-files", is_flag = True)
 @click.pass_context
-def quick(ctx, local_files, tangle_files, all_files, inputs, all_inputs):
+def quick(ctx, gauntlet, local_files, tangle_files, all_files, inputs, all_inputs):
+    gauntlet = gauntlet or ctx.obj.cls
     ctx.invoke(tangle, local_files = local_files, tangle_files = tangle_files, all_files = all_files)
     ctx.invoke(push)
 
 @main.command()
+@gauntletParams
 @tuParams
 @click.option("--test/--no-tests", default = True)
 @click.pass_context
-def super(ctx, test, local_files, tangle_files, all_files, inputs, all_inputs):
-    ctx.invoke(_tut if ctx.obj.cls.doTest and test else _tu, local_files = local_files, tangle_files = tangle_files, all_files = all_files, inputs = inputs, all_inputs = all_inputs)
+def super(ctx, gauntlet, test, local_files, tangle_files, all_files, inputs, all_inputs):
+    gauntlet = gauntlet or ctx.obj.cls
+    ctx.invoke(
+        _tut if gauntlet.doTest and test else _tu,
+        local_files = local_files,
+        tangle_files = tangle_files,
+        all_files = all_files,
+        inputs = inputs,
+        all_inputs = all_inputs,
+    )
     ctx.invoke(push)
 
 @main.command()
+@gauntletParams
 @tuParams
 @click.pass_context
-def poetry2setup(ctx, local_files, tangle_files, all_files, inputs, all_inputs):
-    ctx.invoke(_tu, local_files = local_files, tangle_files = tangle_files, all_files = all_files, inputs = inputs, all_inputs = all_inputs)
-    ctx.obj.cls.run(ctx.obj.cls.nixShellInDir(f"poetry2setup > {ctx.obj.cls.dir}/setup.py"))
+def poetry2setup(ctx, gauntlet, local_files, tangle_files, all_files, inputs, all_inputs):
+    gauntlet = gauntlet or ctx.obj.cls
+    ctx.forward(_tu)
+    gauntlet.run(gauntlet.nixShellInDir(f"poetry2setup > {gauntlet.dir}/setup.py"))
 
 @main.command(name = "touch-tests")
+@gauntletParams
 @click.pass_context
-def touch_tests(ctx):
-    ctx.obj.cls.run(ctx.obj.cls.nixShellInDir(f'find {ctx.obj.cls.dir}/tests -print | grep -v __pycache__ | xargs touch'), ignore_stderr = True)
+def touch_tests(ctx, gauntlet):
+    gauntlet = gauntlet or ctx.obj.cls
+    gauntlet.run(gauntlet.nixShellInDir(f'find {gauntlet.dir}/tests -print | grep -v __pycache__ | xargs touch'), ignore_stderr = True)
 
 @main.command(hidden = True)
+@gauntletParams
 @tuParams
 @click.pass_context
-def _tut(ctx, local_files, tangle_files, all_files, inputs, all_inputs):
-    ctx.invoke(_tu, local_files = local_files, tangle_files = tangle_files, all_files = all_files, inputs = inputs, all_inputs = all_inputs)
+def _tut(ctx, gauntlet, local_files, tangle_files, all_files, inputs, all_inputs):
+    gauntlet = gauntlet or ctx.obj.cls
+    ctx.forward(_tu)
     ctx.invoke(touch_tests)
 
 @main.command(name = "test")
+@gauntletParams
 @tuParams
 @click.argument("args", nargs = -1, required = False)
 @click.pass_context
-def _test(ctx, args, local_files, tangle_files, all_files, inputs, all_inputs):
+def _test(ctx, gauntlet, args, local_files, tangle_files, all_files, inputs, all_inputs):
+    gauntlet = gauntlet or ctx.obj.cls
     ctx.invoke(_tut, local_files = local_files, tangle_files = tangle_files, all_files = all_files, inputs = inputs, all_inputs = all_inputs)
-    ctx.obj.cls.run(ctx.obj.cls.test(*args))
+    gauntlet.run(gauntlet.test(*args))
 
 @main.command(name = "test-native")
+@gauntletParams
 @tuParams
 @click.argument("args", nargs = -1, required = False)
 @click.pass_context
-def test_native(ctx, args, local_files, tangle_files, all_files, inputs, all_inputs):
-    ctx.invoke(_test, "--tb=native", *args, local_files = local_files, tangle_files = tangle_files, all_files = all_files, inputs = inputs, all_inputs = all_inputs)
+def test_native(ctx, gauntlet, args, local_files, tangle_files, all_files, inputs, all_inputs):
+    gauntlet = gauntlet or ctx.obj.cls
+    ctx.invoke(
+        _test,
+        "--tb=native" if gauntlet.testType == "python" else "",
+        *args,
+        local_files = local_files,
+        tangle_files = tangle_files,
+        all_files = all_files,
+        inputs = inputs,
+        all_inputs = all_inputs,
+    )
+
+@main.command()
+@gauntletParams
+@tuParams
+@click.pass_context
+def up(ctx, gauntlet, local_files, tangle_files, all_files, inputs, all_inputs):
+    gauntlet = gauntlet or ctx.obj.cls
+    ctx.invoke(
+        _tu,
+        local_files = local_files,
+        tangle_files = tangle_files,
+        all_files = all_files,
+        inputs = inputs + [ "titan" "settings" ],
+        all_inputs = all_inputs,
+    )
+    gauntlet.run(f'touch {gauntlet.dir}/.envrc')
 
 @main.command()
 @tuParams
+@click.argument("dirs", nargs = -1)
+@click.option("--test/--no-tests", default = True)
 @click.pass_context
-def up(ctx, local_files, tangle_files, all_files, inputs, all_inputs):
-    ctx.invoke(_tu, local_files = local_files, tangle_files = tangle_files, all_files = all_files, inputs = inputs + [ "titan" "settings" ], all_inputs = all_inputs)
-    ctx.obj.cls.run(f'touch {ctx.obj.cls.dir}/.envrc')
+def train(ctx, dirs, test, local_files, tangle_files, all_files, inputs, all_inputs):
+    for d in dirs:
+        ctx.invoke(
+            super,
+            gauntlet = Gauntlet(directory = d, verbose = ctx.obj.cls.verbose),
+            test = test,
+            local_files = local_files,
+            tangle_files = tangle_files,
+            all_files = all_files,
+            inputs = inputs,
+            all_inputs = all_inputs,
+        )
 
 if __name__ == "__main__":
    main(obj=Dict(dict()))
