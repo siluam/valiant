@@ -54,8 +54,9 @@ class gauntlet:
     def run(self, command, stdout = None, stderr = STDOUT, ignore_stderr = False):
         if isinstance(command, (str, bytes, bytearray)):
             command = command.strip()
-            verboseCommand = "\n".join(("           " + line) if index else line for index, line in enumerate(command.split("\n")))
-            self.console.log(f"Subprocessing{(' Command: ' + verboseCommand) if self.verbose else '...'}")
+            if self.verbose:
+                verboseCommand = "\n".join(("           " + line) if index else line for index, line in enumerate(command.split("\n")))
+                self.console.log(f"Subprocessing Command: {verboseCommand}")
             with self.pauseStatus(any(cmd in command for cmd in (
                 "org-tangle",
                 "nix flake update",
@@ -69,7 +70,8 @@ class gauntlet:
             ))):
                 p = Popen(command, shell = True, stdout = stdout, stderr = stderr)
                 p.wait()
-            self.console.log("Subprocessing Complete!\n")
+            if self.verbose:
+                self.console.log("Subprocessing Complete!\n")
             if p.returncode and not ignore_stderr:
                 raise SystemError("Sorry; something happened! Please check the output of the last command run!")
             if stdout:
