@@ -217,7 +217,7 @@ def tuParams(func):
     @click.option("-F", "--local-files", multiple = True, default = [])
     @click.option("-f", "--tangle-files", multiple = True, default = [])
     @click.option("-A", "--all-files", is_flag = True)
-    @click.option("-i", "--inputs", multiple = True)
+    @click.option("-i", "--inputs", multiple = True, default = [])
     @click.option("-a", "--all-inputs", is_flag = True)
     @wraps(func)
     def wrapper(*args, **kwargs):
@@ -352,7 +352,7 @@ def test_native(ctx, args, local_files, tangle_files, all_files, inputs, all_inp
 @tuParams
 @click.pass_context
 def up(ctx, local_files, tangle_files, all_files, inputs, all_inputs):
-    ctx.invoke(_tu, local_files = local_files, tangle_files = tangle_files, all_files = all_files, inputs = inputs, all_inputs = all_inputs)
+    ctx.invoke(_tu, local_files = local_files, tangle_files = tangle_files, all_files = all_files, inputs = inputs + [ "titan" "settings" ], all_inputs = all_inputs)
     ctx.obj.cls.run(f'touch {ctx.obj.cls.dir}/.envrc')
 
 if __name__ == "__main__":
