@@ -6,7 +6,7 @@
             url = "github:edolstra/flake-compat";
             flake = false;
         };
-        nixpkgs.url = github:nixos/nixpkgs/nixos-unstable;
+        nixpkgs.url = github:nixos/nixpkgs/nixos-22.05;
     };
     outputs = inputs@{ self, nixpkgs, flake-utils, ... }: with builtins; with nixpkgs.lib; with flake-utils.lib; let
         pname = "titan";
@@ -15,7 +15,7 @@
             (filter (system: hasPrefix "mips" system) allSystems)
             "x86_64-solaris"
         ]) allSystems;
-        callPackage = { buildPythonPackage, pythonOlder, poetry-core, addict, click, makePythonPath }: buildPythonPackage rec {
+        callPackage = { buildPythonPackage, pythonOlder, poetry-core, addict, click, rich, makePythonPath }: buildPythonPackage rec {
             inherit pname;
             version = "1.0.0.0";
             src = ./.;
@@ -25,7 +25,7 @@
                 homepage = "https://github.com/syvlorg/${pname}";
                 description = "Fine. I'll do it myself.";
             };
-            propagatedBuildInputs = [ addict click ];
+            propagatedBuildInputs = [ addict click rich ];
             propagatedNativeBuildInputs = propagatedBuildInputs;
             buildInputs = [ poetry-core ];
             nativeBuildInputs = buildInputs;

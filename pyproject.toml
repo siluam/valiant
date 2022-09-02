@@ -10,6 +10,7 @@ include = [ "titan/**/*.py", ]
 python = "^3.10"
 addict = "*"
 click = "*"
+rich = "*"
 
 [tool.poetry.dev-dependencies]
 pytest = "^3.0"

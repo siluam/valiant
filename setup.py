@@ -8,7 +8,7 @@ package_data = \
 {'': ['*']}
 
 install_requires = \
-['addict', 'click']
+['addict', 'click', 'rich']
 
 setup_kwargs = {
     'name': 'titan',
