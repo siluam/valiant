@@ -65,8 +65,8 @@ class gauntlet:
                 "nix run",
                 "nix develop",
                 "nix-shell",
-                "git commit",
-                "git push",
+                f"git -C {self.dir} commit",
+                f"git -C {self.dir} push",
             ))):
                 p = Popen(command, shell = True, stdout = stdout, stderr = stderr)
                 p.wait()
