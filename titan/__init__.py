@@ -36,7 +36,7 @@ class gauntlet:
         self.type = self.getPFbWQ(f"nix eval --show-trace --impure --expr '(import {self.dir}).type'")
         self.files = f"{self.preFiles} {self.dir}/{self.projectName}"
         self.updateCommand = self.fallback(f"nix flake update --show-trace {self.dir}")
-        self.inputs = literal_eval(literal_eval(self.getPreFallback(f"""nix eval --show-trace --impure --expr 'with (import {self.dir}); with inputs.nixpkgs.lib; "[ \\"" + (concatStringsSep "\\", \\"" (attrNames inputs)) + "\\" ]"'""").stdout))
+        self.inputs = literal_eval(literal_eval(self.getPreFallback(f"""nix eval --show-trace --impure --expr 'with (import {self.dir}); with (inputs.settings.lib or inputs.nixpkgs.lib); "[ \\"" + (concatStringsSep "\\", \\"" (attrNames inputs)) + "\\" ]"'""").stdout))
         self.currentSystem = self.getPFbWQ("nix eval --show-trace --impure --expr builtins.currentSystem")
         self.doCheck = literal_eval(self.getPreFallback(f"nix eval --show-trace --impure --expr '(import {self.dir}).packages.{self.currentSystem}.default.doCheck'").stdout.capitalize())
         self.testType = self.getPFbWQ(f"nix eval --show-trace --impure --expr '(import {self.dir}).testType'")
