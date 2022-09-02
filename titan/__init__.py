@@ -64,6 +64,8 @@ class gauntlet:
                 "nix run",
                 "nix develop",
                 "nix-shell",
+                "git commit",
+                "git push",
             ))):
                 p = Popen(command, shell = True, stdout = stdout, stderr = stderr)
                 p.wait()
