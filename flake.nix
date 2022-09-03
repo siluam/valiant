@@ -11,10 +11,6 @@
     outputs = inputs@{ self, nixpkgs, flake-utils, ... }: with builtins; with nixpkgs.lib; with flake-utils.lib; let
         pname = "titan";
         type = "python3";
-        workingSystems = subtractLists (flatten [
-            (filter (system: hasPrefix "mips" system) allSystems)
-            "x86_64-solaris"
-        ]) allSystems;
         callPackage = { buildPythonPackage, pythonOlder, poetry-core, addict, click, rich, makePythonPath }: buildPythonPackage rec {
             inherit pname;
             version = "1.0.0.0";
@@ -76,7 +72,7 @@
             defaultOverlay = overlay;
         };
         mkApp = name: drv: { type = "app"; program = "${drv}${drv.passthru.exePath or "/bin/${drv.meta.mainprogram or drv.executable or drv.pname or drv.name or name}"}"; };
-        outputs = eachSystem workingSystems (system: rec {
+        outputs = eachDefaultSystem (system: rec {
             pkgs = import nixpkgs {
                 overlays = attrValues overlayset.overlays;
                 inherit system;
@@ -123,5 +119,5 @@
     in overlayset // outputs // {
         inherit callPackage python pname type;
         testType = "python";
-    } // (listToAttrs (map (system: nameValuePair system (mapAttrs (n: v: v.${system}) outputs)) workingSystems));
+    } // (listToAttrs (map (system: nameValuePair system (mapAttrs (n: v: v.${system}) outputs)) defaultSystems));
 }
