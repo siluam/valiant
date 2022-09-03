@@ -416,6 +416,7 @@ def up(ctx, local_files, tangle_files, all_files, inputs, all_inputs):
 @click.option("--test/--no-tests", default = True)
 @click.pass_context
 def pipe(ctx, dirs, test, local_files, tangle_files, all_files, inputs, all_inputs):
+    print([ Path(d).resolve(strict = True) for d in list(dirs) + ctx.obj.cls.opts.pipe.dirs ])
     for d in (Path(d).resolve(strict = True) for d in list(dirs) + ctx.obj.cls.opts.pipe.dirs):
         ctx.obj.cls = gauntlet(directory = d, verbose = ctx.obj.cls.verbose)
         ctx.invoke(
