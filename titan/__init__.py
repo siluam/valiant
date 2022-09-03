@@ -126,7 +126,7 @@ class gauntlet:
 
     def fallbackCommand(self, command, files, get = False):
         self.removeTangleBackups()
-        output = getattr(self, "get" if get else "run")(command)
+        output = getattr(self, "get" if get else "run")(command, ignore_stderr = True)
         if getattr(output, "returncode", 0):
             self.run(f"org-tangle -f {files}", stdout = DEVNULL)
             return command
@@ -162,7 +162,7 @@ class gauntlet:
 
     def tangleCommand(self, files):
         self.removeTangleBackups()
-        if getattr(self.run(self.nixShell("org-tangle -f", files, _type = "general")), "returncode", 0):
+        if getattr(self.run(self.nixShell("org-tangle -f", files, _type = "general"), ignore_stderr = True), "returncode", 0):
             return f"org-tangle -f {files}"
 
     def test(self, *args, _type = None):
@@ -416,8 +416,8 @@ def up(ctx, local_files, tangle_files, all_files, inputs, all_inputs):
 @click.option("--test/--no-tests", default = True)
 @click.pass_context
 def pipe(ctx, dirs, test, local_files, tangle_files, all_files, inputs, all_inputs):
-    print([ Path(d).resolve(strict = True) for d in list(dirs) + ctx.obj.cls.opts.pipe.dirs ])
-    for d in (Path(d).resolve(strict = True) for d in list(dirs) + ctx.obj.cls.opts.pipe.dirs):
+    dirs = [ Path(d).resolve(strict = True) for d in list(dirs) + ctx.obj.cls.opts.pipe.dirs ]
+    for d in dirs:
         ctx.obj.cls = gauntlet(directory = d, verbose = ctx.obj.cls.verbose)
         ctx.invoke(
             super,
@@ -428,6 +428,7 @@ def pipe(ctx, dirs, test, local_files, tangle_files, all_files, inputs, all_inpu
             inputs = inputs,
             all_inputs = all_inputs,
         )
+        ctx.obj.cls.status.stop()
 
 if __name__ == "__main__":
     obj=Dict(dict())
