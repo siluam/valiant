@@ -22,7 +22,7 @@ output = namedtuple("output", "stdout stderr returncode")
 def escapeQuotes(string):
     return str(string).replace('"', '\\"').replace("'", "\\'")
 
-class Gauntlet:
+class gauntlet:
     __slots__ = (
         "color",
         "console",
@@ -43,29 +43,13 @@ class Gauntlet:
         "updateCommand",
         "verbose",
     )
-    def __init__(self, directory, verbose = False, delay_status = False):
-        self.console = Console()
-        self.color = "bold salmon1"
-        self.status = self.console.status(f"[{self.color}]Working...", spinner_style = self.color)
-        if not delay_status:
-            self.status.start()
-
+    def __init__(self, directory, verbose = False, piping = False):
         self.dir = Path(directory).resolve(strict = True)
         if Path.cwd() != self.dir:
             chdir(self.dir)
 
         self.sir = str(self.dir)
         self.verbose = verbose
-        self.preFiles = " ".join(f"{self.dir}/{file}" for file in ("nix.org", "flake.org", "tests.org", "README.org"))
-        self.projectName = self.getPFbWQ(f"nix eval --show-trace --impure --expr '(import {self.dir}).pname'")
-        self.type = self.getPFbWQ(f"nix eval --show-trace --impure --expr '(import {self.dir}).type'")
-        self.files = f"{self.preFiles} {self.dir}/{self.projectName}"
-        self.updateCommand = self.fallback(f"nix flake update --show-trace {self.dir}")
-        self.inputs = literal_eval(literal_eval(self.getPreFallback(f"""nix eval --show-trace --impure --expr 'with (import {self.dir}); with (inputs.settings.lib or inputs.nixpkgs.lib); "[ \\"" + (concatStringsSep "\\", \\"" (attrNames inputs)) + "\\" ]"'""").stdout))
-        self.currentSystem = self.getPFbWQ("nix eval --show-trace --impure --expr builtins.currentSystem")
-        self.doCheck = literal_eval(self.getPreFallback(f"nix eval --show-trace --impure --expr '(import {self.dir}).packages.{self.currentSystem}.default.doCheck'").stdout.capitalize())
-        self.testType = self.getPFbWQ(f"nix eval --show-trace --impure --expr '(import {self.dir}).testType'")
-        self.doTest = self.doCheck or ((self.type != "general") and (self.testType != "general"))
 
         self.file = self.dir / "titan.json"
         if self.file.exists():
@@ -73,8 +57,25 @@ class Gauntlet:
                 self.opts = Dict(json.load(f))
         else:
             self.opts = Dict()
-        if not self.opts.test.args:
-            self.opts.test.args = []
+        self.opts.test.args = self.opts.test.args or []
+        self.opts.pipe.dirs = self.opts.pipe.dirs or []
+
+        if not piping:
+            self.console = Console()
+            self.color = "bold salmon1"
+            self.status = self.console.status(f"[{self.color}]Working...", spinner_style = self.color)
+            self.status.start()
+
+            self.preFiles = " ".join(f"{self.dir}/{file}" for file in ("nix.org", "flake.org", "tests.org", "README.org"))
+            self.projectName = self.getPFbWQ(f"nix eval --show-trace --impure --expr '(import {self.dir}).pname'")
+            self.type = self.getPFbWQ(f"nix eval --show-trace --impure --expr '(import {self.dir}).type'")
+            self.files = f"{self.preFiles} {self.dir}/{self.projectName}"
+            self.updateCommand = self.fallback(f"nix flake update --show-trace {self.dir}")
+            self.inputs = literal_eval(literal_eval(self.getPreFallback(f"""nix eval --show-trace --impure --expr 'with (import {self.dir}); with (inputs.settings.lib or inputs.nixpkgs.lib); "[ \\"" + (concatStringsSep "\\", \\"" (attrNames inputs)) + "\\" ]"'""").stdout))
+            self.currentSystem = self.getPFbWQ("nix eval --show-trace --impure --expr builtins.currentSystem")
+            self.doCheck = literal_eval(self.getPreFallback(f"nix eval --show-trace --impure --expr '(import {self.dir}).packages.{self.currentSystem}.default.doCheck'").stdout.capitalize())
+            self.testType = self.getPFbWQ(f"nix eval --show-trace --impure --expr '(import {self.dir}).testType'")
+            self.doTest = self.doCheck or ((self.type != "general") and (self.testType != "general"))
 
     @contextmanager
     def pauseStatus(self, pred):
@@ -179,7 +180,7 @@ class Gauntlet:
 @click.pass_context
 def main(ctx, directory, verbose):
     ctx.ensure_object(dict)
-    ctx.obj.cls = Gauntlet(directory = directory, verbose = verbose, delay_status = ctx.invoked_subcommand == "pipe")
+    ctx.obj.cls = gauntlet(directory = directory, verbose = verbose, piping = ctx.invoked_subcommand == "pipe")
 
 @main.command()
 @click.pass_context
@@ -411,13 +412,12 @@ def up(ctx, local_files, tangle_files, all_files, inputs, all_inputs):
 
 @main.command()
 @tuParams
-@click.argument("dirs", nargs = -1)
+@click.argument("dirs", nargs = -1, required = False)
 @click.option("--test/--no-tests", default = True)
 @click.pass_context
 def pipe(ctx, dirs, test, local_files, tangle_files, all_files, inputs, all_inputs):
-    for d in dirs:
-        ctx.obj.cls.status.stop()
-        ctx.obj.cls = Gauntlet(directory = d, verbose = ctx.obj.cls.verbose)
+    for d in (Path(d).resolve(strict = True) for d in list(dirs) + ctx.obj.cls.opts.pipe.dirs):
+        ctx.obj.cls = gauntlet(directory = d, verbose = ctx.obj.cls.verbose)
         ctx.invoke(
             super,
             test = test,
