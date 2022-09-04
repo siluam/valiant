@@ -123,7 +123,7 @@ class Gauntlet:
         return self.run(f"""git -C {self.dir} {command}""", **kwargs)
 
     def getGit(self, command, **kwargs):
-        return self.get(f"""git -C {self.dir} {command}""", **kwargs)
+        return self.get(f"""git -C {self.dir} {command}""", **kwargs).stdout.strip('"')
 
     def fallbackCommand(self, command, files, get = False):
         output = getattr(self, "get" if get else "run")(command, ignore_stderr = True)
