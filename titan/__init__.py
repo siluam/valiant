@@ -17,7 +17,7 @@ from rich import print
 from rich.console import Console
 from subprocess import Popen, PIPE, STDOUT, DEVNULL
 
-output = namedtuple("output", "stdout stderr returncode")
+Output = namedtuple("Output", "stdout stderr returncode")
 
 def escapeQuotes(string):
     return str(string).replace('"', '\\"').replace("'", "\\'")
@@ -101,15 +101,16 @@ class Gauntlet:
             ))):
                 p = Popen(command, shell = True, stdout = stdout, stderr = stderr)
                 p.wait()
-            if p.returncode and not ignore_stderr:
-                raise SystemError(f"Sorry; something happened! Please check the output of the last command run:\n\n{command}\n")
-            if self.verbose:
-                self.console.log("Subprocessing Complete!\n")
-            return output(
+            output = Output(
                 stdout = TextIOWrapper(p.stdout).read().strip() if p.stdout else None,
                 stderr = TextIOWrapper(p.stderr).read().strip() if p.stderr else None,
                 returncode = p.returncode,
             )
+            if p.returncode and not ignore_stderr:
+                raise SystemError(f"Sorry; something happened! Please check the output of the last command run:\n\n{command}\n\n#######\nSTDERR:\n#######\n\n{output.stderr}\n\n###########\nRETURNCODE:\n###########\n\n{output.returncode}")
+            if self.verbose:
+                self.console.log("Subprocessing Complete!\n")
+            return output
         else:
             return command
 
