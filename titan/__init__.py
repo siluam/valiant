@@ -119,6 +119,12 @@ class Gauntlet:
     def get(self, command, **kwargs):
         return self.run(command, stdout = PIPE, stderr = PIPE, **kwargs)
 
+    def runGit(self, command, **kwargs):
+        return self.run(f"""git -C {self.dir} {command}""", **kwargs)
+
+    def getGit(self, command, **kwargs):
+        return self.get(f"""git -C {self.dir} {command}""", **kwargs)
+
     def fallbackCommand(self, command, files, get = False):
         self.removeTangleBackups()
         output = getattr(self, "get" if get else "run")(command, ignore_stderr = True)
@@ -157,10 +163,8 @@ class Gauntlet:
 
     def tangleCommand(self, files):
         self.removeTangleBackups()
-        command = self.nixShell("org-tangle -f", files, _type = "general")
-        if self.run(command, ignore_stderr = True).returncode:
-            self.run(f"org-tangle -f {files}")
-            return command
+        if self.run(self.nixShell("org-tangle -f", files, _type = "general"), ignore_stderr = True).returncode:
+            return f"org-tangle -f {files}"
 
     def test(self, *args, _type = None):
         if self.opts.test.cmd:
@@ -218,7 +222,7 @@ def gauntletParams(func):
 @click.pass_context
 def add(ctx, gauntlet):
     for g in (gauntlet,) if gauntlet else ctx.obj.cls:
-        g.run(f"git -C {g.dir} add .")
+        g.runGit(f"add .")
 
 @main.command()
 @gauntletParams
@@ -226,7 +230,7 @@ def add(ctx, gauntlet):
 def commit(ctx, gauntlet):
     for g in (gauntlet,) if gauntlet else ctx.obj.cls:
         ctx.invoke(add, gauntlet = g)
-        g.run(f'git -C {g.dir} commit --allow-empty-message -am ""', ignore_stderr = True)
+        g.runGit(f'commit --allow-empty-message -am ""', ignore_stderr = True)
 
 @main.command()
 @gauntletParams
@@ -234,7 +238,8 @@ def commit(ctx, gauntlet):
 def push(ctx, gauntlet):
     for g in (gauntlet,) if gauntlet else ctx.obj.cls:
         ctx.invoke(commit, gauntlet = g)
-        g.run(f"git -C {g.dir} push")
+        if not g.getGit("status").split("\n")[1].startswith("Your branch is up to date"):
+            g.runGit(f"push")
 
 @main.command()
 @gauntletParams
@@ -263,21 +268,13 @@ def update(ctx, gauntlet, inputs, all_inputs):
 
 @main.command()
 @gauntletParams
-@click.pass_context
-def pre_tangle(ctx, gauntlet):
-    for g in (gauntlet,) if gauntlet else ctx.obj.cls:
-        ctx.invoke(update, gauntlet = g, inputs = [ "settings" ])
-        g.removeTangleBackups()
-
-@main.command()
-@gauntletParams
 @click.option("-F", "--local-files", multiple = True, type = Path)
 @click.option("-f", "--tangle-files", multiple = True, type = Path)
 @click.option("-a", "--all-files", is_flag = True)
 @click.pass_context
 def tangle(ctx, gauntlet, local_files, tangle_files, all_files):
     for g in (gauntlet,) if gauntlet else ctx.obj.cls:
-        ctx.invoke(pre_tangle, gauntlet = g)
+        ctx.invoke(update, gauntlet = g, inputs = [ "settings" ])
         local_files = [ (g.dir / file) for file in local_files ]
         tangle_files = list(tangle_files)
         if all_files:
@@ -285,6 +282,10 @@ def tangle(ctx, gauntlet, local_files, tangle_files, all_files):
         else:
             g.run(g.tangleCommand(" ".join(tangle_files + local_files) or g.files))
         ctx.invoke(add, gauntlet = g)
+        checkCommand = f"nix flake check --show-trace {g.dir}"
+        if g.run(checkCommand, ignore_stderr = True).returncode:
+            ctx.invoke(update, gauntlet = g)
+            g.run(checkCommand)
 
 # Adapted from: https://github.com/pallets/click/issues/108#issuecomment-280489786
 
