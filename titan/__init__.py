@@ -285,11 +285,11 @@ def tangle(ctx, gauntlet, local_files, tangle_files, all_files):
             g.run(g.tangleCommand(" ".join(tangle_files + local_files) + " " + g.files))
         else:
             g.run(g.tangleCommand(" ".join(tangle_files + local_files) or g.files))
-        ctx.invoke(add, gauntlet = g)
         checkCommand = f"nix flake check --show-trace {g.dir}"
         if g.run(checkCommand, ignore_stderr = True).returncode:
             ctx.invoke(update, gauntlet = g)
             g.run(checkCommand)
+        ctx.invoke(add, gauntlet = g)
 
 @main.command()
 @gauntletParams
