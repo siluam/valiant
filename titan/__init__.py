@@ -106,7 +106,7 @@ class Gauntlet:
                 stderr = TextIOWrapper(p.stderr).read().strip() if p.stderr else None,
                 returncode = p.returncode,
             )
-            if p.returncode and not ignore_stderr:
+            if (p.returncode > 0) and not ignore_stderr:
                 raise SystemError(f"Sorry; something happened! Please check the output of the last command run:\n\n{command}\n\n#######\nSTDERR:\n#######\n\n{output.stderr}\n\n###########\nRETURNCODE:\n###########\n\n{output.returncode}")
             if self.verbose:
                 self.console.log("Subprocessing Complete!\n")
@@ -128,7 +128,7 @@ class Gauntlet:
 
     def fallbackCommand(self, command, files, get = False):
         output = getattr(self, "get" if get else "run")(command, ignore_stderr = True)
-        if output.returncode:
+        if output.returncode > 0:
             self.removeTangleBackups()
             self.run(f"org-tangle -f {files}", stdout = DEVNULL if get else None)
             return command
@@ -167,7 +167,7 @@ class Gauntlet:
 
     def tangleCommand(self, files):
         self.removeTangleBackups()
-        if self.run(self.nixShell("org-tangle -f", files, _type = "general"), ignore_stderr = True).returncode:
+        if self.run(self.nixShell("org-tangle -f", files, _type = "general"), ignore_stderr = True).returncode > 0:
             return f"org-tangle -f {files}"
 
     def test(self, *args, _type = None):
@@ -286,7 +286,7 @@ def tangle(ctx, gauntlet, local_files, tangle_files, all_files):
         else:
             g.run(g.tangleCommand(" ".join(tangle_files + local_files) or g.files))
         checkCommand = f"nix flake check --show-trace {g.dir}"
-        if g.run(checkCommand, ignore_stderr = True).returncode:
+        if g.run(checkCommand, ignore_stderr = True).returncode > 0:
             ctx.invoke(update, gauntlet = g)
             g.run(checkCommand)
         ctx.invoke(add, gauntlet = g)
