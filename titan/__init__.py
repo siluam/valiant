@@ -193,7 +193,7 @@ cwd = Path.cwd()
 def main(ctx, dirs, opts_file, opts_dir, verbose):
     ctx.ensure_object(dict)
 
-    if (opts_file and Path(opts_file).resolve().exists()) or (opts_dir and (opts_file := Path(opts_dir).resolve() / filename).exists()) or (opts_file := optsfilename):
+    if (opts_file and Path(opts_file).resolve().exists()) or (opts_dir and (opts_file := Path(opts_dir).resolve() / filename).exists()) or (opts_file := optsfilename).exists():
         chdir(opts_file.parent)
         with open(opts_file) as f:
             ctx.obj.opts = Dict(json.load(f))
