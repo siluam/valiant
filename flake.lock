@@ -47,11 +47,28 @@
         "type": "github"
       }
     },
+    "poetry2setup": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1662248445,
+        "narHash": "sha256-zuFX/tRfQxScGQF5VWIlYqg3RRoa74Ri0ScFX9f3C1c=",
+        "owner": "abersheeran",
+        "repo": "poetry2setup",
+        "rev": "999c2611ab7dab8154efe3960523273bcc6563b6",
+        "type": "github"
+      },
+      "original": {
+        "owner": "abersheeran",
+        "repo": "poetry2setup",
+        "type": "github"
+      }
+    },
     "root": {
       "inputs": {
         "flake-compat": "flake-compat",
         "flake-utils": "flake-utils",
-        "nixpkgs": "nixpkgs"
+        "nixpkgs": "nixpkgs",
+        "poetry2setup": "poetry2setup"
       }
     }
   },

@@ -7,10 +7,41 @@
             flake = false;
         };
         nixpkgs.url = github:nixos/nixpkgs/nixos-22.05;
+        poetry2setup = {
+            url = github:abersheeran/poetry2setup;
+            flake = false;
+        };
     };
     outputs = inputs@{ self, nixpkgs, flake-utils, ... }: with builtins; with nixpkgs.lib; with flake-utils.lib; let
         pname = "titan";
         type = "python3";
+        callPoetry2Setup = { Python, gawk }: let
+            inherit (Python.pkgs) buildPythonApplication poetry-core makePythonPath;
+        in buildPythonApplication rec {
+            pname = "poetry2setup";
+            version = "1.0.0";
+            format = "pyproject";
+            src = inputs.${pname};
+            propagatedBuildInputs = [ poetry-core ];
+            propagatedNativeBuildInputs = propagatedBuildInputs;
+            buildInputs = [ poetry-core ];
+            nativeBuildInputs = buildInputs;
+            installPhase = ''
+                mkdir --parents $out/bin
+                cp $src/${pname}.py $out/bin/${pname}
+                chmod +x $out/bin/${pname}
+                
+                # Adapted from [[https://unix.stackexchange.com/users/28765/rudimeier][rudimeier's]] answer [[https://unix.stackexchange.com/a/313025/270053][here]]:
+                ${gawk}/bin/awk -i inplace 'BEGINFILE{print "#!/usr/bin/env python3"}{print}' $out/bin/${pname}
+            '';
+            postFixup = "wrapProgram $out/bin/${pname} $makeWrapperArgs";
+            makeWrapperArgs = [ "--prefix PYTHONPATH : ${makePythonPath propagatedNativeBuildInputs}" ];
+            meta = {
+                description = "Convert python-poetry(pyproject.toml) to setup.py.";
+                homepage = "https://github.com/abersheeran/${pname}";
+                license = licenses.mit;
+            };
+        };
         callPackage = { buildPythonPackage, pythonOlder, poetry-core, addict, click, rich, makePythonPath }: buildPythonPackage rec {
             inherit pname;
             version = "1.0.0.0";
@@ -30,9 +61,10 @@
                 python -c "import ${concatStringsSep "; import " [ pname ]}"
             '';
             doCheck = false;
+            passthru = { inherit format disabled; };
         };
         python = "python310";
-        callApplication = { Python }: let
+        callApplication = { Python, poetry2setup }: let
             ppkgs = Python.pkgs;
         in ppkgs.buildPythonApplication ((filterAttrs (n: v: ! ((isDerivation v) || (elem n [
             "drvAttrs"
@@ -43,30 +75,33 @@
         ]))) ppkgs.${pname}) // (rec {
             propagatedBuildInputs = toList ppkgs.${pname};
             propagatedNativeBuildInputs = propagatedBuildInputs;
+            buildInputs = toList poetry2setup;
+            nativeBuildInputs = buildInputs;
             installPhase = ''
                 mkdir --parents $out/bin
                 cp $src/${pname}/__init__.py $out/bin/${pname}
                 chmod +x $out/bin/${pname}
             '';
             postFixup = "wrapProgram $out/bin/${pname} $makeWrapperArgs";
-            makeWrapperArgs = [ "--prefix PYTHONPATH : ${ppkgs.makePythonPath propagatedBuildInputs}" ];
+            makeWrapperArgs = [
+                "--prefix PYTHONPATH : ${ppkgs.makePythonPath propagatedBuildInputs}"
+                "--prefix PATH : ${makeBinPath nativeBuildInputs}"
+            ];
         }));
         overlayset = let
             overlay = final: prev: { ${pname} = final.callPackage callApplication {}; };
-            python = final: prev: { ${self.python} = prev.${self.python}.override (super: {
-                packageOverrides = composeExtensions (super.packageOverrides or (_: _: {})) (new: old: {
-                    ${pname} = new.callPackage callPackage {  };
-                });
-            }); };
         in {
             overlays = rec {
-                inherit python;
-                python3 = python;
-                ${self.python} = python;
                 "python3-${pname}" = python;
-                Python = final: prev: { Python = final.${self.python}; };
                 ${pname} = overlay;
+                ${self.python} = python;
                 default = overlay;
+                poetry2setup = final: prev: { poetry2setup = final.callPackage callPoetry2Setup {}; };
+                Python = final: prev: { Python = final.${self.python}; };
+                python = final: prev: { ${self.python} = prev.${self.python}.override (super: {
+                    packageOverrides = composeExtensions (super.packageOverrides or (_: _: {})) (new: old: { ${pname} = new.callPackage callPackage {  }; });
+                }); };
+                python3 = python;
             };
             inherit overlay;
             defaultOverlay = overlay;
@@ -88,13 +123,16 @@
                 ];
             };
             legacyPackages = pkgs;
-            packages = flattenTree (rec {
-                python = pkgs.${self.python}.withPackages (ppkgs: [ ppkgs.${pname} ]);
-                python3 = python;
+            packages = flattenTree rec {
+                "python3-${pname}" = python;
+                ${pname} = default;
                 ${self.python} = python;
                 default = pkgs.${pname};
-                ${pname} = default;
-            });
+                poetry2setup = pkgs.poetry2setup;
+                Python = pkgs.Python;
+                python = pkgs.${self.python}.withPackages (ppkgs: [ ppkgs.${pname} ]);
+                python3 = python;
+            };
             package = packages.default;
             defaultPackage = package;
             apps = mapAttrs mkApp packages;
