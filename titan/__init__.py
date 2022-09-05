@@ -200,6 +200,8 @@ def main(ctx, dirs, opts_file, opts_dir, verbose):
     else:
         ctx.obj.opts = Dict()
 
+    ctx.obj.opts.dirs = ctx.obj.opts.dirs or []
+
     ctx.obj.console = Console()
     ctx.obj.color = "bold salmon1"
     ctx.obj.status = ctx.obj.console.status(f"[{ctx.obj.color}]Working...", spinner_style = ctx.obj.color)
