@@ -180,7 +180,7 @@ class Gauntlet:
                 case _: return None
 
 filename = "titan.json"
-optsdirname = Path("~/.config/titan").resolve()
+optsdirname = Path(f"{Path.home()}/.config/titan").resolve()
 optsfilename = (optsdirname / filename).resolve()
 cwd = Path.cwd()
 
