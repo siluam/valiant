@@ -32,7 +32,6 @@ class Gauntlet:
         "currentSystem",
         "dir",
         "doCheck",
-        "doTest",
         "file",
         "tangle_files",
         "export_files",
@@ -78,7 +77,6 @@ class Gauntlet:
         self.currentSystem = self.getPFbWQ("nix eval --show-trace --impure --expr builtins.currentSystem")
         self.doCheck = literal_eval(self.getPreFallback(f"nix eval --show-trace --impure --expr '(import {self.dir}).packages.{self.currentSystem}.default.doCheck or false'").stdout.capitalize())
         self.testType = self.getPFbWQ(f"nix eval --show-trace --impure --expr '(import {self.dir}).testType'")
-        self.doTest = self.doCheck or ((self.type != "general") and (self.testType != "general"))
 
     @contextmanager
     def pauseStatus(self, pred):
@@ -532,14 +530,14 @@ def super(
     for g in (gauntlet,) if gauntlet else ctx.obj.cls:
         if any((ef, all_export_files, export)):
             ctx.invoke(
-                _test if g.doTest and g.opts.super.test and test else _export,
+                _test if g.doCheck and g.opts.super.test and test else _export,
                 gauntlet = g,
                 ef = ef,
                 all_export_files = all_export_files,
                 **kwargs,
             )
         else:
-            ctx.invoke(_test if g.doTest and g.opts.super.test and test else _tu, gauntlet = g, **kwargs)
+            ctx.invoke(_test if g.doCheck and g.opts.super.test and test else _tu, gauntlet = g, **kwargs)
         if not do_not_push:
             ctx.invoke(push, message = message, fds = fds, gauntlet = g)
 
