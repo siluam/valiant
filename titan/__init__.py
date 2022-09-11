@@ -300,14 +300,13 @@ def push(ctx, message, gauntlet, fds):
 def update(ctx, gauntlet, inputs, all_inputs):
     for g in (gauntlet,) if gauntlet else ctx.obj.cls:
         ctx.invoke(add, gauntlet = g)
-        if inputs:
-            if ("settings" in inputs) and (g.projectName == "settings"):
-                inputs.remove("settings")
-            inputString = ' --update-input '.join(i for i in g.inputs if not ((i in (
-                'nixos-master',
-                'nixos-unstable',
-            )) or i.endswith('-small')))
-            command = f"nix flake lock {g.dir} --show-trace --update-input {inputString}"
+        if inputs and ("settings" in inputs) and (g.projectName == "settings"):
+            inputs.remove("settings")
+        inputString = ' --update-input '.join(i for i in g.inputs if not ((i in (
+            'nixos-master',
+            'nixos-unstable',
+        )) or i.endswith('-small')))
+        command = f"nix flake lock {g.dir} --show-trace --update-input {inputString}"
         if inputs:
             if (intersection := set(g.inputs).intersection(inputs)):
                 g.fallback(f'nix flake lock {g.dir} --show-trace --update-input {"--update-input ".join(intersection)}')
