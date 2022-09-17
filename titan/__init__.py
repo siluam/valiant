@@ -135,7 +135,9 @@ class Gauntlet:
             if (p.returncode > 0) and not ignore_stderr:
                 raise SystemError(f"Sorry; something happened! Please check the output of the last command run:\n\n{command}\n\n#######\nSTDERR:\n#######\n\n{output.stderr}\n\n###########\nRETURNCODE:\n###########\n\n{output.returncode}")
             if self.verbose:
-                self.console.log(f"           Subprocessing Complete! Value: {output.stdout}\n")
+                message = "           Subprocessing Complete! Value: "
+                indentedOutput = "\n".join(((" " * len(message)) + line) for index, line in enumerate(output.stdout.split("\n")) if index) if output.stdout else output.stdout
+                self.console.log(f"{message}{indentedOutput}\n")
             return output
         else:
             return command
