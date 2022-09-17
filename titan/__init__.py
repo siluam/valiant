@@ -284,12 +284,15 @@ def commit(ctx, message, gauntlet, fds):
 @main.command()
 @gauntletParams
 @click.option("-f", "--fds", multiple = True)
+@click.option("-n", "--do-not-push", is_flag = True)
 @click.argument("message", required = False)
 @click.pass_context
-def push(ctx, message, gauntlet, fds):
+def push(ctx, message, gauntlet, fds, do_not_push):
     for g in (gauntlet,) if gauntlet else ctx.obj.cls:
         ctx.invoke(commit, message = message, gauntlet = g, fds = fds)
-        if not g.getGit("status").split("\n")[1].startswith("Your branch is up to date"):
+
+        # Keep the order of the conditional here, as we want this to be in the verbose output if necessary.
+        if not (g.getGit("status").split("\n")[1].startswith("Your branch is up to date") or do_not_push):
             g.runGit(f"push")
 
 @main.command()
@@ -496,8 +499,7 @@ def quick(ctx, message, gauntlet, fds, tf, all_tangle_files, do_not_push, export
             ctx.invoke(_export, gauntlet = g, ef = ef, all_export_files = all_export_files, **kwargs)
         else:
             ctx.invoke(tangle, gauntlet = g, **kwargs)
-        if not do_not_push:
-            ctx.invoke(push, message = message, fds = fds, gauntlet = g)
+        ctx.invoke(push, message = message, fds = fds, gauntlet = g, do_not_push = do_not_push)
 
 @main.command()
 @gauntletParams
@@ -541,8 +543,7 @@ def super(
             )
         else:
             ctx.invoke(_test if g.doCheck and g.opts.super.test and test else _tu, gauntlet = g, **kwargs)
-        if not do_not_push:
-            ctx.invoke(push, message = message, fds = fds, gauntlet = g)
+        ctx.invoke(push, message = message, fds = fds, gauntlet = g, do_not_push = do_not_push)
 
 @main.command()
 @gauntletParams
