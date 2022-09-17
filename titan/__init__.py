@@ -309,7 +309,8 @@ def update(ctx, gauntlet, inputs, all_inputs):
             if (intersection := set(g.inputs).intersection(inputs)):
                 g.fallback(f'nix flake lock {g.dir} --show-trace --update-input {"--update-input ".join(intersection)}')
             else:
-                g.warn(f"We could not find your input from the following inputs: {g.inputs}")
+                if intersection:
+                    g.warn(f'We could not find your inputs {list(intersection)} from the following inputs: {g.inputs}')
                 g.fallback(command)
         elif all_inputs:
             g.fallback(g.updateCommand)
@@ -339,7 +340,7 @@ def tangle(ctx, gauntlet, tf, all_tangle_files):
 
 @main.command()
 @gauntletParams
-@click.argument("tangle-files", nargs = -1, required = False)
+@click.argument("tf", nargs = -1, required = False)
 @click.option("-a", "--all-tangle-files", is_flag = True)
 @click.pass_context
 def check(ctx, gauntlet, tf, all_tangle_files):
@@ -479,7 +480,7 @@ def touch_test(ctx, test, gauntlet, tf, all_tangle_files, inputs, all_inputs):
 @main.command()
 @gauntletParams
 @exportParams
-@click.option("--tangle-files", multiple = True, default = [])
+@click.option("--tf", multiple = True, default = [])
 @click.option("--all-tangle-files", is_flag = True)
 @click.option("-n", "--do-not-push", is_flag = True)
 @click.option("-f", "--fds", multiple = True)
