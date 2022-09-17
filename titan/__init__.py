@@ -136,7 +136,7 @@ class Gauntlet:
                 raise SystemError(f"Sorry; something happened! Please check the output of the last command run:\n\n{command}\n\n#######\nSTDERR:\n#######\n\n{output.stderr}\n\n###########\nRETURNCODE:\n###########\n\n{output.returncode}")
             if self.verbose:
                 message = "           Subprocessing Complete! Value: "
-                indentedOutput = "\n".join(((" " * len(message)) + line) for index, line in enumerate(output.stdout.split("\n")) if index) if output.stdout else output.stdout
+                indentedOutput = "\n".join(((" " * len(message)) + line) if index else line for index, line in enumerate(output.stdout.split("\n"))) if output.stdout else output.stdout
                 self.console.log(f"{message}{indentedOutput}\n")
             return output
         else:
