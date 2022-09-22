@@ -228,7 +228,7 @@ optsfilename = (optsdirname / filename).resolve()
 cwd = Path.cwd()
 
 @click.group()
-@click.option("-d", "--dirs", default = (cwd,), multiple = True)
+@click.option("-d", "--dirs", multiple = True)
 @click.option("-O", "--opts-file", help = "Path to a global options file.")
 @click.option("-o", "--opts-dir", help = f'Path to a directory with a global options file "{filename}".')
 @click.option("-v", "--verbose", is_flag = True)
@@ -243,7 +243,7 @@ def main(ctx, dirs, opts_file, opts_dir, verbose):
     else:
         ctx.obj.opts = Dict()
 
-    ctx.obj.opts.dirs = ctx.obj.opts.dirs or []
+    ctx.obj.opts.dirs = ctx.obj.opts.dirs or [ cwd ]
 
     ctx.obj.console = Console(log_path = False, log_time = False)
     ctx.obj.color = "bold green"
