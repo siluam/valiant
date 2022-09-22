@@ -9,7 +9,7 @@ from addict import Dict
 from ast import literal_eval
 from collections import namedtuple
 from contextlib import contextmanager
-from functools import wraps
+from functools import wraps, partial
 from os import chdir, geteuid
 from pathlib import Path
 from queue import Queue, Empty
@@ -77,6 +77,9 @@ class Gauntlet:
         self.currentSystem = self.getPFbWQ("nix eval --show-trace --impure --expr builtins.currentSystem")
         self.doCheck = literal_eval(self.getPreFallback(f"nix eval --show-trace --impure --expr '(import {self.dir}).packages.{self.currentSystem}.default.doCheck or false'").stdout.capitalize())
         self.testType = self.getPFbWQ(f"nix eval --show-trace --impure --expr '(import {self.dir}).testType'")
+
+    def __eq__(self, directory):
+        return directory in (self.dir, self.sir)
 
     @contextmanager
     def pauseStatus(self, pred):
@@ -162,7 +165,7 @@ class Gauntlet:
 
     def fallbackCommand(self, command, files, get = False, **kwargs):
         stdout = DEVNULL if get else None
-        if not Path(self.dir / "flake.nix").exists:
+        if not Path(self.dir / "flake.nix").exists():
             self.run(f"org-tangle -f {files}", stdout = stdout)
         if not Path(self.dir / "flake.lock").exists():
             self.runGit(f"add .", stdout = stdout)
@@ -247,12 +250,13 @@ def main(ctx, dirs, opts_file, opts_dir, verbose):
     ctx.obj.status = ctx.obj.console.status(f"[{ctx.obj.color}]Working...", spinner_style = ctx.obj.color)
     ctx.obj.status.start()
 
-    ctx.obj.cls = [ Gauntlet(
-        directory = d,
+    ctx.obj.paths = [ Path(d).resolve(strict = True) for d in list(dirs) + ctx.obj.opts.dirs ]
+    ctx.obj.mkGauntlet = partial(
+        Gauntlet,
         verbose = verbose,
         console = ctx.obj.console,
         status = ctx.obj.status
-    ) for d in [ Path(d).resolve(strict = True) for d in list(dirs) + ctx.obj.opts.dirs ] ]
+    )
 
 # Adapted from: https://github.com/pallets/click/issues/108#issuecomment-280489786
 
@@ -268,7 +272,7 @@ def gauntletParams(func):
 @click.argument("fds", nargs = -1, required = False)
 @click.pass_context
 def add(ctx, fds, gauntlet):
-    for g in (gauntlet,) if gauntlet else ctx.obj.cls:
+    for g in (gauntlet,) if gauntlet else (ctx.obj.mkGauntlet(directory = path) for path in ctx.obj.paths):
         g.runGit(f"""add {" ".join(fds or (".",))}""")
 
 @main.command()
@@ -277,7 +281,7 @@ def add(ctx, fds, gauntlet):
 @click.option("-f", "--fds", multiple = True)
 @click.argument("message", required = False)
 def commit(ctx, message, gauntlet, fds):
-    for g in (gauntlet,) if gauntlet else ctx.obj.cls:
+    for g in (gauntlet,) if gauntlet else (ctx.obj.mkGauntlet(directory = path) for path in ctx.obj.paths):
         ctx.invoke(add, fds = fds, gauntlet = g)
         g.runGit(f"""commit --allow-empty-message -am "{message or ""}" """, ignore_stderr = True)
 
@@ -288,7 +292,7 @@ def commit(ctx, message, gauntlet, fds):
 @click.argument("message", required = False)
 @click.pass_context
 def push(ctx, message, gauntlet, fds, do_not_push):
-    for g in (gauntlet,) if gauntlet else ctx.obj.cls:
+    for g in (gauntlet,) if gauntlet else (ctx.obj.mkGauntlet(directory = path) for path in ctx.obj.paths):
         ctx.invoke(commit, message = message, gauntlet = g, fds = fds)
 
         # Keep the order of the conditional here, as we want this to be in the verbose output if necessary.
@@ -301,7 +305,7 @@ def push(ctx, message, gauntlet, fds, do_not_push):
 @click.option("-a", "--all-inputs", is_flag = True)
 @click.pass_context
 def update(ctx, gauntlet, inputs, all_inputs):
-    for g in (gauntlet,) if gauntlet else ctx.obj.cls:
+    for g in (gauntlet,) if gauntlet else (ctx.obj.mkGauntlet(directory = path) for path in ctx.obj.paths):
         ctx.invoke(add, gauntlet = g)
         if inputs and ("settings" in inputs) and (g.projectName == "settings"):
             inputs.remove("settings")
@@ -330,7 +334,7 @@ def update(ctx, gauntlet, inputs, all_inputs):
 @click.option("-a", "--all-tangle-files", is_flag = True, help = "Tangle specified and default files.")
 @click.pass_context
 def tangle(ctx, gauntlet, tf, all_tangle_files):
-    for g in (gauntlet,) if gauntlet else ctx.obj.cls:
+    for g in (gauntlet,) if gauntlet else (ctx.obj.mkGauntlet(directory = path) for path in ctx.obj.paths):
         ctx.invoke(update, gauntlet = g, inputs = [ "settings" ])
         tf = " ".join([ str((g.dir / file).resolve(strict = True)) for file in tf ])
         if all_tangle_files:
@@ -349,7 +353,7 @@ def tangle(ctx, gauntlet, tf, all_tangle_files):
 @click.option("-a", "--all-tangle-files", is_flag = True)
 @click.pass_context
 def check(ctx, gauntlet, tf, all_tangle_files):
-    for g in (gauntlet,) if gauntlet else ctx.obj.cls:
+    for g in (gauntlet,) if gauntlet else (ctx.obj.mkGauntlet(directory = path) for path in ctx.obj.paths):
         ctx.invoke(tangle, gauntlet = g, tf = tf, all_tangle_files = all_tangle_files)
 
 # Adapted from: https://github.com/pallets/click/issues/108#issuecomment-280489786
@@ -369,7 +373,7 @@ def tuParams(func):
 @tuParams
 @click.pass_context
 def _tu(ctx, gauntlet, tf, all_tangle_files, inputs, all_inputs):
-    for g in (gauntlet,) if gauntlet else ctx.obj.cls:
+    for g in (gauntlet,) if gauntlet else (ctx.obj.mkGauntlet(directory = path) for path in ctx.obj.paths):
         ctx.invoke(tangle, gauntlet = g, tf = tf, all_tangle_files = all_tangle_files)
         ctx.invoke(update, gauntlet = g, inputs = inputs, all_inputs = all_inputs)
 
@@ -393,7 +397,7 @@ def _export(ctx, gauntlet, tf, all_tangle_files, inputs, all_inputs, ef, all_exp
     "EF: Export files."
     ef = list(ef)
     kwargs = dict(tf = list(tf) + ef, all_tangle_files = all_tangle_files, inputs = inputs, all_inputs = all_inputs)
-    for g in (gauntlet,) if gauntlet else ctx.obj.cls:
+    for g in (gauntlet,) if gauntlet else (ctx.obj.mkGauntlet(directory = path) for path in ctx.obj.paths):
         ctx.invoke(_tu, gauntlet = g, **kwargs)
         ef = [ str((g.dir / file).resolve(strict = True)) for file in (ef + g.opts.export.ef) ]
         if all_export_files:
@@ -408,7 +412,7 @@ def _export(ctx, gauntlet, tf, all_tangle_files, inputs, all_inputs, ef, all_exp
 @click.argument("devshell", required = False)
 @click.pass_context
 def develop(ctx, devshell, gauntlet, tf, all_tangle_files, inputs, all_inputs):
-    for g in (gauntlet,) if gauntlet else ctx.obj.cls:
+    for g in (gauntlet,) if gauntlet else (ctx.obj.mkGauntlet(directory = path) for path in ctx.obj.paths):
         ctx.invoke(_tu, gauntlet = g, tf = tf, all_tangle_files = all_tangle_files, inputs = inputs, all_inputs = all_inputs)
         g.fallback(f'nix develop --show-trace "{g.dir}#{devshell or "makefile"}"')
 
@@ -420,7 +424,7 @@ def develop(ctx, devshell, gauntlet, tf, all_tangle_files, inputs, all_inputs):
 @click.option("-w", "--with-pkgs", multiple = True)
 @click.pass_context
 def shell(ctx, gauntlet, pkgs, pkg_string, with_pkgs, tf, all_tangle_files, inputs, all_inputs):
-    for g in (gauntlet,) if gauntlet else ctx.obj.cls:
+    for g in (gauntlet,) if gauntlet else (ctx.obj.mkGauntlet(directory = path) for path in ctx.obj.paths):
         if pkg_string:
             pass
         elif with_pkgs:
@@ -435,7 +439,7 @@ def shell(ctx, gauntlet, pkgs, pkg_string, with_pkgs, tf, all_tangle_files, inpu
 @tuParams
 @click.pass_context
 def repl(ctx, gauntlet, tf, all_tangle_files, inputs, all_inputs):
-    for g in (gauntlet,) if gauntlet else ctx.obj.cls:
+    for g in (gauntlet,) if gauntlet else (ctx.obj.mkGauntlet(directory = path) for path in ctx.obj.paths):
         ctx.invoke(_tu, gauntlet = g, tf = tf, all_tangle_files = all_tangle_files, inputs = inputs, all_inputs = all_inputs)
         g.fallback(g.nixShell(g.type))
 
@@ -445,7 +449,7 @@ def repl(ctx, gauntlet, tf, all_tangle_files, inputs, all_inputs):
 @click.option("-p", "--pkgs", multiple = True, default = ("default",))
 @click.pass_context
 def build(ctx, gauntlet, pkgs, tf, all_tangle_files, inputs, all_inputs):
-    for g in (gauntlet,) if gauntlet else ctx.obj.cls:
+    for g in (gauntlet,) if gauntlet else (ctx.obj.mkGauntlet(directory = path) for path in ctx.obj.paths):
         ctx.invoke(_tu, gauntlet = g, tf = tf, all_tangle_files = all_tangle_files, inputs = inputs, all_inputs = all_inputs)
         g.fallback(f"""nix build --show-trace "{g.dir}#{f'" "{g.dir}#'.join(pkgs)}" """)
 
@@ -455,7 +459,7 @@ def build(ctx, gauntlet, pkgs, tf, all_tangle_files, inputs, all_inputs):
 @click.argument("command")
 @click.pass_context
 def cmd(ctx, command, gauntlet, tf, all_tangle_files, inputs, all_inputs):
-    for g in (gauntlet,) if gauntlet else ctx.obj.cls:
+    for g in (gauntlet,) if gauntlet else (ctx.obj.mkGauntlet(directory = path) for path in ctx.obj.paths):
         ctx.invoke(_tu, gauntlet = g, tf = tf, all_tangle_files = all_tangle_files, inputs = inputs, all_inputs = all_inputs)
         g.fallback(g.nixShellInDir(escapeQuotes(command)))
 
@@ -467,7 +471,7 @@ def cmd(ctx, command, gauntlet, tf, all_tangle_files, inputs, all_inputs):
 @click.option("-p", "--pkg", default = "default")
 @click.pass_context
 def _run(ctx, args, gauntlet, arg_string, pkg, tf, all_tangle_files, inputs, all_inputs):
-    for g in (gauntlet,) if gauntlet else ctx.obj.cls:
+    for g in (gauntlet,) if gauntlet else (ctx.obj.mkGauntlet(directory = path) for path in ctx.obj.paths):
         ctx.invoke(_tu, gauntlet = g, tf = tf, all_tangle_files = all_tangle_files, inputs = inputs, all_inputs = all_inputs)
         g.fallback(f"""nix run --show-trace "{g.dir}#{pkg}" -- {arg_string or " ".join(args)}""")
 
@@ -477,7 +481,7 @@ def _run(ctx, args, gauntlet, arg_string, pkg, tf, all_tangle_files, inputs, all
 @click.argument("test")
 @click.pass_context
 def touch_test(ctx, test, gauntlet, tf, all_tangle_files, inputs, all_inputs):
-    for g in (gauntlet,) if gauntlet else ctx.obj.cls:
+    for g in (gauntlet,) if gauntlet else (ctx.obj.mkGauntlet(directory = path) for path in ctx.obj.paths):
         ctx.invoke(_tu, gauntlet = g, tf = tf, all_tangle_files = all_tangle_files, inputs = inputs, all_inputs = all_inputs)
         test = escapeQuotes(test)
         g.fallback(g.nixShell("touch", test, "&&".type, test))
@@ -494,7 +498,7 @@ def touch_test(ctx, test, gauntlet, tf, all_tangle_files, inputs, all_inputs):
 @click.pass_context
 def quick(ctx, message, gauntlet, fds, tf, all_tangle_files, do_not_push, export, ef, all_export_files):
     kwargs = dict(tf = tf, all_tangle_files = all_tangle_files)
-    for g in (gauntlet,) if gauntlet else ctx.obj.cls:
+    for g in (gauntlet,) if gauntlet else (ctx.obj.mkGauntlet(directory = path) for path in ctx.obj.paths):
         if any((ef, all_export_files, export)):
             ctx.invoke(_export, gauntlet = g, ef = ef, all_export_files = all_export_files, **kwargs)
         else:
@@ -532,7 +536,7 @@ def super(
         inputs = inputs,
         all_inputs = all_inputs,
     )
-    for g in (gauntlet,) if gauntlet else ctx.obj.cls:
+    for g in (gauntlet,) if gauntlet else (ctx.obj.mkGauntlet(directory = path) for path in ctx.obj.paths):
         if any((ef, all_export_files, export)):
             ctx.invoke(
                 _test if g.doCheck and g.opts.super.test and test else _export,
@@ -550,7 +554,7 @@ def super(
 @tuParams
 @click.pass_context
 def poetry2setup(ctx, gauntlet, tf, all_tangle_files, inputs, all_inputs):
-    for g in (gauntlet,) if gauntlet else ctx.obj.cls:
+    for g in (gauntlet,) if gauntlet else (ctx.obj.mkGauntlet(directory = path) for path in ctx.obj.paths):
         ctx.invoke(_tu, gauntlet = g, tf = tf, all_tangle_files = all_tangle_files, inputs = inputs, all_inputs = all_inputs)
         with open(g.dir / "setup.py", "w") as stdout:
             g.fallback(g.nixShellInDir("poetry2setup"), stdout = stdout)
@@ -559,7 +563,7 @@ def poetry2setup(ctx, gauntlet, tf, all_tangle_files, inputs, all_inputs):
 @gauntletParams
 @click.pass_context
 def touch_tests(ctx, gauntlet):
-    for g in (gauntlet,) if gauntlet else ctx.obj.cls:
+    for g in (gauntlet,) if gauntlet else (ctx.obj.mkGauntlet(directory = path) for path in ctx.obj.paths):
         g.run(f'find {g.dir}/tests -print | grep -v __pycache__ | xargs touch', stdout = DEVNULL, stderr = DEVNULL, ignore_stderr = True)
 
 @main.command(hidden = True)
@@ -567,7 +571,7 @@ def touch_tests(ctx, gauntlet):
 @tuParams
 @click.pass_context
 def _tut(ctx, gauntlet, tf, all_tangle_files, inputs, all_inputs):
-    for g in (gauntlet,) if gauntlet else ctx.obj.cls:
+    for g in (gauntlet,) if gauntlet else (ctx.obj.mkGauntlet(directory = path) for path in ctx.obj.paths):
         ctx.invoke(_tu, gauntlet = g, tf = tf, all_tangle_files = all_tangle_files, inputs = inputs, all_inputs = all_inputs)
         ctx.invoke(touch_tests, gauntlet = g)
 
@@ -577,7 +581,7 @@ def _tut(ctx, gauntlet, tf, all_tangle_files, inputs, all_inputs):
 @exportParams
 @click.pass_context
 def _tet(ctx, gauntlet, tf, all_tangle_files, inputs, all_inputs, ef, all_export_files):
-    for g in (gauntlet,) if gauntlet else ctx.obj.cls:
+    for g in (gauntlet,) if gauntlet else (ctx.obj.mkGauntlet(directory = path) for path in ctx.obj.paths):
         ctx.invoke(
             _export,
             gauntlet = g,
@@ -604,7 +608,7 @@ def _test(ctx, args, gauntlet, export, tf, all_tangle_files, inputs, all_inputs,
         inputs = inputs,
         all_inputs = all_inputs,
     )
-    for g in (gauntlet,) if gauntlet else ctx.obj.cls:
+    for g in (gauntlet,) if gauntlet else (ctx.obj.mkGauntlet(directory = path) for path in ctx.obj.paths):
         if any((ef, all_export_files, export)):
             ctx.invoke(
                 _tet,
@@ -623,7 +627,7 @@ def _test(ctx, args, gauntlet, export, tf, all_tangle_files, inputs, all_inputs,
 @click.argument("args", nargs = -1, required = False)
 @click.pass_context
 def test_native(ctx, args, gauntlet, tf, all_tangle_files, inputs, all_inputs):
-    for g in (gauntlet,) if gauntlet else ctx.obj.cls:
+    for g in (gauntlet,) if gauntlet else (ctx.obj.mkGauntlet(directory = path) for path in ctx.obj.paths):
         ctx.invoke(
             _test,
             "--tb=native" if g.testType == "python" else "",
@@ -640,7 +644,7 @@ def test_native(ctx, args, gauntlet, tf, all_tangle_files, inputs, all_inputs):
 @tuParams
 @click.pass_context
 def up(ctx, gauntlet, tf, all_tangle_files, inputs, all_inputs):
-    for g in (gauntlet,) if gauntlet else ctx.obj.cls:
+    for g in (gauntlet,) if gauntlet else (ctx.obj.mkGauntlet(directory = path) for path in ctx.obj.paths):
         ctx.invoke(
             _tu,
             gauntlet = g,
