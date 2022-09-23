@@ -174,7 +174,12 @@ class Gauntlet:
         if output.returncode > 0:
             self.removeTangleBackups()
             self.run(f"org-tangle -f {files}", stdout = stdout)
-            return command
+            output = getattr(self, "get" if get else "run")(command, ignore_stderr = True, **kwargs)
+            if output.returncode > 0:
+                self.run(f"nix flake update {self.dir}", stdout = stdout)
+                return command
+            else:
+                return output
         else:
             return output
 
