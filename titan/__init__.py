@@ -248,7 +248,7 @@ def main(ctx, dirs, opts_file, opts_dir, verbose):
     else:
         ctx.obj.opts = Dict()
 
-    ctx.obj.opts.dirs = ctx.obj.opts.dirs or [ cwd ]
+    ctx.obj.opts.dirs = ctx.obj.opts.dirs or ([] if dirs else [ cwd ])
 
     ctx.obj.console = Console(log_path = False, log_time = False)
     ctx.obj.color = "bold green"
@@ -599,11 +599,11 @@ def _tet(ctx, gauntlet, tf, all_tangle_files, inputs, all_inputs, ef, all_export
         )
         ctx.invoke(touch_tests, gauntlet = g)
 
-@main.command(name = "test")
+@main.command(name = "test", context_settings=dict(ignore_unknown_options=True,))
 @gauntletParams
 @tuParams
 @exportParams
-@click.argument("args", nargs = -1, required = False)
+@click.argument("args", nargs = -1, required = False, type=click.UNPROCESSED)
 @click.option("-e", "--export", is_flag = True)
 @click.pass_context
 def _test(ctx, args, gauntlet, export, tf, all_tangle_files, inputs, all_inputs, ef, all_export_files):
@@ -626,10 +626,10 @@ def _test(ctx, args, gauntlet, export, tf, all_tangle_files, inputs, all_inputs,
             ctx.invoke(_tut, gauntlet = g, **kwargs)
         g.fallback(g.test(*args))
 
-@main.command(name = "test-native")
+@main.command(name = "test-native", context_settings=dict(ignore_unknown_options=True,))
 @gauntletParams
 @tuParams
-@click.argument("args", nargs = -1, required = False)
+@click.argument("args", nargs = -1, required = False, type=click.UNPROCESSED)
 @click.pass_context
 def test_native(ctx, args, gauntlet, tf, all_tangle_files, inputs, all_inputs):
     for g in (gauntlet,) if gauntlet else (ctx.obj.mkGauntlet(directory = path) for path in ctx.obj.paths):
