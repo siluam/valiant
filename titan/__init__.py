@@ -561,8 +561,7 @@ def super(
 def poetry2setup(ctx, gauntlet, tf, all_tangle_files, inputs, all_inputs):
     for g in (gauntlet,) if gauntlet else (ctx.obj.mkGauntlet(directory = path) for path in ctx.obj.paths):
         ctx.invoke(_tu, gauntlet = g, tf = tf, all_tangle_files = all_tangle_files, inputs = inputs, all_inputs = all_inputs)
-        with open(g.dir / "setup.py", "w") as stdout:
-            g.fallback(g.nixShellInDir("poetry2setup"), stdout = stdout)
+        g.fallback(g.nixShellInDir(f"""poetry2setup > "{g.dir / "setup.py"}" """))
 
 @main.command(name = "touch-tests")
 @gauntletParams
