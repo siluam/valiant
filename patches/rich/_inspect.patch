@@ -1,0 +1,123 @@
+--- a/rich/_inspect.py	2023-06-08 01:07:21.495429893 -0400
++++ b/rich/_inspect.py	2023-06-08 02:07:50.202681783 -0400
+@@ -1,8 +1,17 @@
+ from __future__ import absolute_import
+ 
++try:
++    from hy import unmangle
++except ModuleNotFoundError:
++    hylang_installed = False
++else:
++    from itertools import chain
++
++    hylang_installed = True
++
+ import inspect
+ from inspect import cleandoc, getdoc, getfile, isclass, ismodule, signature
+-from typing import Any, Collection, Iterable, Optional, Tuple, Type, Union
++from typing import Any, Collection, Dict, Iterable, Optional, Tuple, Type, Union
+ 
+ from .console import Group, RenderableType
+ from .control import escape_control_codes
+@@ -49,6 +58,7 @@
+         sort: bool = True,
+         all: bool = True,
+         value: bool = True,
++        Hy: bool = False,
+     ) -> None:
+         self.highlighter = ReprHighlighter()
+         self.obj = obj
+@@ -62,6 +72,7 @@
+         self.dunder = dunder
+         self.sort = sort
+         self.value = value
++        self.hy = hylang_installed and Hy
+ 
+     def _make_title(self, obj: Any) -> Text:
+         """Make a default title."""
+@@ -89,6 +100,21 @@
+             _signature = "(...)"
+         except TypeError:
+             return None
++        else:
++            if self.hy:
++                _signature_split_equals = chain(
++                    *(item.split("=") for item in _signature.split(" "))
++                )
++                _signature_split_left_paren = chain(
++                    *(item.split("(") for item in _signature_split_equals)
++                )
++                _unmangled_names = {
++                    item: unmangle(item)
++                    for item in _signature_split_left_paren
++                    if item != unmangle(item)
++                }
++                for key, value in _unmangled_names.items():
++                    _signature = _signature.replace(key, value)
+ 
+         source_filename: Optional[str] = None
+         try:
+@@ -104,6 +130,9 @@
+ 
+         qualname = name or getattr(obj, "__qualname__", name)
+ 
++        if self.hy:
++            qualname = unmangle(qualname)
++
+         # If obj is a module, there may be classes (which are callable) to display
+         if inspect.isclass(obj):
+             prefix = "class"
+@@ -120,6 +149,20 @@
+ 
+         return qual_signature
+ 
++    def _recursive_unmangle(self, dct: Dict[Any, Any]) -> Dict[str, Any]:
++        """Recursively unmangle hylang key names"""
++        if self.hy:
++            return {
++                unmangle(key): (
++                    self._recursive_unmangle(value)
++                    if isinstance(value, dict)
++                    else value
++                )
++                for key, value in dct.items()
++            }
++        else:
++            return dct
++
+     def _render(self) -> Iterable[RenderableType]:
+         """Render object."""
+ 
+@@ -175,7 +218,7 @@
+         for key, (error, value) in items:
+             key_text = Text.assemble(
+                 (
+-                    key,
++                    unmangle(key) if self.hy else key,
+                     "inspect.attr.dunder" if key.startswith("__") else "inspect.attr",
+                 ),
+                 (" =", "inspect.equals"),
+@@ -186,6 +229,23 @@
+                 add_row(warning, highlighter(repr(error)))
+                 continue
+ 
++            if key == "__slots__":
++                value = self._recursive_unmangle(
++                    {item: getattr(obj, item) for item in value if item != "__dict__"}
++                )
++            elif isinstance(value, dict):
++                value = self._recursive_unmangle(value)
++            elif isinstance(value, str):
++                pass
++            else:
++                if self.hy:
++                    try:
++                        iter(value)
++                    except TypeError:
++                        pass
++                    else:
++                        value = type(value)([unmangle(item) for item in value])
++
+             if callable(value):
+                 if not self.methods:
+                     continue

@@ -1,0 +1,1 @@
+{ dirs = "../nix", valiant = true }

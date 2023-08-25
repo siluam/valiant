@@ -1,0 +1,1 @@
+{ dirs = "../hujson", valiant = True }

@@ -1,26 +1,61 @@
 [tool.poetry]
-name = "titan"
+name = "valiant"
 version = "1.0.0.0"
 description = "Fine. I'll do it myself."
 authors = ["sylvorg <jeet.ray@syvl.org>"]
 license = "OREO"
-include = [ "titan/**/*.py", ]
+include = [ "valiant/**/*.py", "valiant/resources/**/*" ]
 
 [tool.poetry.dependencies]
 python = "^3.10"
 addict = "*"
-click = "*"
-rich = "*"
+ansicolors = "*"
+black = "*"
+dhall = "*"
+jsonnet = "*"
+more-itertools = "*"
+orjson = "*"
+poetry-core = "*"
+poetry2setup = { git = "https://github.com/syvlorg/poetry2setup.git", branch = "master" }
+python-rapidjson = "*"
+pyyaml = "*"
+rich-click = "*"
+sh = "*"
+xmltodict = "*"
 
 [tool.poetry.dev-dependencies]
 pytest = "^3.0"
-poetry = "*"
-poetry2setup = "*"
+pytest-custom_exit_code = "*"
 pytest-hy = "*"
-pytest-randomly = "*"
+pytest-lazy-fixture = "*"
+pytest-order = "*"
 pytest-parametrized = "*"
+pytest-randomly = "*"
 pytest-sugar = "*"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.pytest.ini_options]
+addopts = [
+	"--strict-markers",
+]
+markers = [
+	"collectDirs",
+	"conf",
+	"configure",
+	"configuring",
+	"environment",
+	"escapeQuotes",
+	"getFuncDefaults",
+	"is_coll",
+	"module_installed",
+	"nix",
+	"normalizeMultiline",
+	"opts",
+	"path",
+	"toColl",
+	"update",
+	"xml",
+]

@@ -1,0 +1,2 @@
+dirs: "../dhall"
+valiant: true

@@ -1,0 +1,18 @@
+--- a/rich/__init__.py	2023-06-08 01:01:14.025723969 -0400
++++ b/rich/__init__.py	2023-01-09 00:34:07.646134911 -0500
+@@ -130,6 +130,7 @@
+     sort: bool = True,
+     all: bool = False,
+     value: bool = True,
++    Hy: bool = False,
+ ) -> None:
+     """Inspect any Python object.
+ 
+@@ -169,6 +170,7 @@
+         sort=sort,
+         all=all,
+         value=value,
++        Hy=Hy,
+     )
+     _console.print(_inspect)
+ 
