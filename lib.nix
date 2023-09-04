@@ -66,9 +66,6 @@ with lfinal; {
     let super = rattrs self;
     in (recursiveUpdateAll null super (f self super));
 
-  # Adapted From: https://github.com/NixOS/nixpkgs/blob/master/lib/fixed-points.nix#L89
-  mkMergeExtensible = mkMergeExtensibleWithCustomName "extend";
-
   # Adapted From: https://github.com/NixOS/nixpkgs/blob/master/lib/fixed-points.nix#L107
   mkMergeExtensibleWithCustomName = extenderName: rattrs:
     fix' (self:
@@ -77,13 +74,14 @@ with lfinal; {
           mkMergeExtensibleWithCustomName extenderName (mergeExtends f rattrs);
       });
 
+  # Adapted From: https://github.com/NixOS/nixpkgs/blob/master/lib/fixed-points.nix#L89
+  mkMergeExtensible = mkMergeExtensibleWithCustomName "extend";
+
   iron = mkMergeExtensible (lself: {
     listToString = map (v: ''"${v}"'');
     valiant = flake;
     extendIron = lib: func:
-      lib.extend (final: prev: {
-        iron = prev.iron.extend (self: super: func final prev self super);
-      });
+      lib.extend (final: prev: { iron = prev.iron.extend (func final prev); });
     deepEval = e: tryEval (deepSeq e e);
 
     passName = n: v: v n;
@@ -166,7 +164,6 @@ with lfinal; {
 
     mkInputs = inputs': pure:
       mapAttrs (n: v: v (inputs'.${n}.pkgs or inputs'.${n} or [ ])) {
-        general = inputs: { ... }: inputs;
         python = inputs:
           { type ? "general", parallel ? true, ... }:
           flatten [
@@ -252,7 +249,9 @@ with lfinal; {
         base ((fold.merge [
           {
             groups.${group}.buildInputs = toList (mkWithPackages pkgs.${type} [
-              (mkBuildInputs.${group} { inherit type parallel; })
+              ((mkBuildInputs.${group} or (_: { ... }: _)) {
+                inherit type parallel;
+              })
               (merger args "propagatedBuildInputs" [ ])
             ] pname);
           }
@@ -298,8 +297,12 @@ with lfinal; {
       let
         inherit (iron) attrs fold makefile mapAttrNames;
         not-general = !((group == "general") && (type == "general"));
+        packages = if group == "emacs" then
+          (attrNames pkgs.emacsen)
+        else
+          attrs.packages.${group};
         mkfiles = let
-          typefiles = genAttrs attrs.packages.${group}
+          typefiles = genAttrs packages
             (type: makefile.${group} (fold.set [ args { inherit type; } ]));
         in fold.set [
           { general = makefile.general args; }
@@ -320,27 +323,39 @@ with lfinal; {
           pythonpaths = mapAttrs' (n: v:
             nameValuePair "makefile-${n}-pythonpath"
             (makefile.echo.default "PYTHONPATH" pkgs v))
-            (filterAttrs (n: v: elem n attrs.packages.${group}) mkfiles);
+            (filterAttrs (n: v: elem n packages) mkfiles);
         in fold.set [
           pythonpaths
           { makefile-pythonpath = pythonpaths."makefile-${type}-pythonpath"; }
         ]))
       ];
 
+    inputTypeTo = func: suffix:
+      mapAttrs (n: v: func (v + suffix)) iron.attrs.inputPrefixes;
+    inputPkgsTo = flip iron.inputTypeTo "Pkg";
+    inputAppsTo = flip iron.inputTypeTo "App";
+    inputBothTo = func:
+      genAttrs (attrNames iron.attrs.inputPrefixes) (pkg: inputs:
+        ((iron.inputPkgsTo func).${pkg} inputs)
+        // ((iron.inputAppsTo func).${pkg} inputs));
+
     inputToOverlays = prefix: inputs:
-      iron.fold.set
-      (mapAttrsToList (N: V: filterAttrs (n: v: iron.libbed n) V.overlays)
+      iron.fold.set (mapAttrsToList
+        (N: V: filterAttrs (n: v: iron.libbed n) (V.overlays or { }))
         (filterAttrs (n: v: hasPrefix "${prefix}-" n) inputs));
-    inputTypeToOverlays = suffix:
-      mapAttrs (n: v: iron.inputToOverlays (v + suffix))
-      iron.attrs.inputPrefixes;
+    inputTypeToOverlays = with iron; inputTypeTo inputToOverlays;
     inputPkgsToOverlays = iron.inputTypeToOverlays "Pkg";
     inputAppsToOverlays = iron.inputTypeToOverlays "App";
-    inputBothToOverlays =
-      let inherit (iron) attrs inputPkgsToOverlays inputAppsToOverlays;
-      in genAttrs (attrNames attrs.inputPrefixes) (pkg: inputs:
-        (inputPkgsToOverlays.${pkg} inputs)
-        // (inputAppsToOverlays.${pkg} inputs));
+    inputBothToOverlays = with iron; inputBothTo inputToOverlays;
+
+    inputToPackages = prefix': inputs:
+      let prefix = prefix' + "-";
+      in map (removePrefix prefix)
+      (attrNames (filterAttrs (n: v: hasPrefix prefix n) inputs));
+    inputTypeToPackages = with iron; inputTypeTo inputToPackages;
+    inputPkgsToPackages = iron.inputTypeToPackages "Pkg";
+    inputAppsToPackages = iron.inputTypeToPackages "App";
+    inputBothToPackages = with iron; inputBothTo inputToPackages;
 
     # `filters.has.list' is an incomplete function; the general form of `withPackages~ is ~(pkgs: ...)',
     # where the full form of `filters.has.list' would be `(pkgs: filters.has.list [...] pkgs)'.
@@ -456,109 +471,119 @@ with lfinal; {
     all = all id;
 
     getOfficialOverlays = group: inputs: overlayset:
-      unique (flatten [
-        (map (input: input.overlayset.official.${group} or [ ])
+      iron.fold.set [
+        (map (input: input.overlayset.official.${group} or { })
           (attrValues inputs))
-        (overlayset.official.${group} or [ ])
-      ]);
+        (overlayset.official.${group} or { })
+      ];
+
+    inheritAttr = name: attrs: { ${name} = attrs.${name}; };
 
     # "Tooled Overlays" are overlays that come with specific tools,
     # like "valiant" or "bundle".
     mkOutputs = let
-      inherit (iron)
-        foldOrFlake callPackageFilter filterInheritance filters has fold
-        getCallPackage getCallPackages getGroup getOverlay getOverlays
-        inputBothToOverlays libify makefiles mif mifNotNull mkApp mkPackages
-        toPythonApplication update genLibs swapSystemOutputs;
-      inherit (linputs.flake-utils.lib) eachSystem filterPackages;
-      inherit (linputs.flake-utils-plus.lib) defaultSystems;
-      base = baseOverlays: tooledOverlays: tool:
+      base = baseOverlays: tooledOverlays: tool: olib: languages:
         let
+          inherit (olib) iron;
+          inherit (iron)
+            foldOrFlake callPackageFilter filterInheritance filters has fold
+            getCallPackage getCallPackages getGroup getOverlay getOverlays
+            libify makefiles mif mifNotNull mkApp mkPackages toPythonApplication
+            update genLibs swapSystemOutputs;
+          inherit (linputs.flake-utils.lib) eachSystem filterPackages;
+          inherit (linputs.flake-utils-plus.lib) defaultSystems;
           bothOverlays = baseOverlays.__extend__
             (if (isFunction tooledOverlays) then
               tooledOverlays
             else
               (_: _: tooledOverlays));
-          mkOutputs = base bothOverlays { } tool;
+          mkOutputs = base bothOverlays { } tool olib { };
 
           # Have to use the modified `mkOutputs'
           mkLanguage = outputs: mkOutputs.general outputs.plus outputs.args;
 
-          mkLanguages = mapAttrs (n: v: plus: args:
-            v ((args.language or "general") == n) plus args) {
+          mkLanguages = mapAttrs
+            (n: v: plus: args: v ((args.language or "general") == n) plus args)
+            (fold.set [
+              {
 
-              # IMPORTANT: Only keep the arguments that have default
-              #            values specific to this function,
-              #            are required arguments,
-              #            or are used more than once.
-              python = currentLanguage:
-                plus@{ self, inputs, pname
+                # IMPORTANT: Only keep the arguments that have default
+                #            values specific to this function,
+                #            are required arguments,
+                #            or are used more than once.
+                python = currentLanguage:
+                  plus@{ self, inputs, pname
 
-                # These have to be explicitly inherited in the output,
-                # as they may not be provided by the end user
-                , type ? iron.attrs.versions.python, doCheck ? true
-                , callPackageset ? { }
+                  # These have to be explicitly inherited in the output,
+                  # as they may not be provided by the end user
+                  , type ? iron.attrs.versions.python, doCheck ? true
+                  , callPackageset ? { }
 
-                , ... }:
-                args@{ isApp ? false, pythonOverlays ? { }, ... }:
-                let
-                  gottenCallPackage = getCallPackage plus args;
-                  inherit (gottenCallPackage) callPackage;
-                  inheritance = filterInheritance callPackage
-                    (gottenCallPackage.inheritance
-                      // (args.inheritance or { }));
-                  default = mifNotNull.default (getOverlay plus args)
-                    (final: prev:
-                      update.python.callPython inheritance pname callPackage
-                      final prev);
-                  systemOutputs = pkgs: {
-                    packages = filterPackages pkgs.stdenv.targetPlatform.system
-                      (mkPackages self.overlayset.python pkgs.pythons pname
-                        isApp type currentLanguage);
+                  , ... }:
+                  args@{ isApp ? false, pythonOverlays ? { }, ... }:
+                  let
+                    gottenCallPackage = getCallPackage plus args;
+                    inherit (gottenCallPackage) callPackage;
+                    inheritance = filterInheritance callPackage
+                      (gottenCallPackage.inheritance
+                        // (args.inheritance or { }));
+                    default = mifNotNull.default (getOverlay plus args)
+                      (final: prev:
+                        update.python.callPython inheritance pname callPackage
+                        final prev);
+                    systemOutputs = pkgs: {
+                      packages =
+                        filterPackages pkgs.stdenv.targetPlatform.system
+                        (mkPackages self.overlayset.python pkgs.pythons pname
+                          isApp type currentLanguage);
+                    };
+                  in {
+                    plus = fold.merge [
+                      (if (args.mkFlake or false) then {
+                        outputsBuilder = channels:
+                          systemOutputs channels.${plus.channel or "nixpkgs"};
+                      } else
+                        (eachSystem (args.supportedSystems or defaultSystems)
+                          (system: systemOutputs self.pkgs.${system})))
+                      (optionalAttrs currentLanguage {
+                        inherit type doCheck callPackageset;
+                      })
+                      {
+                        ${mif.null currentLanguage "overlay"} = if isApp then
+                          (final: prev: {
+                            # IMPORTANT: Because `attrValues' sorts attribute set items
+                            #            alphabetically, if you add a `default' package,
+                            #            packages whose names start with letters later on
+                            #            in the alphabet will always override earlier
+                            #            packages, such as `valiant' overriding `tailapi'.
+                            ${pname} = final.callPackage
+                              (toPythonApplication (args.extras or { }) pname)
+                              inheritance;
+                          })
+                        else
+                          default;
+                        overlayset.python = fold.set [
+                          (optionalAttrs currentLanguage {
+                            "${pname}-lib" = default;
+                          })
+                          (genLibs (n: v: final: prev:
+                            let cpkg = v.package or v;
+                            in update.python.callPython (fold.set [
+                              { pname = n; }
+                              (args.inheritance or { })
+                              (v.inheritance or { })
+                            ]) n cpkg final prev)
+                            (callPackageset.python or { }))
+                          pythonOverlays
+                        ];
+                      }
+                      plus
+                    ];
+                    inherit args;
                   };
-
-                in {
-                  plus = fold.merge [
-                    (if (args.mkFlake or false) then {
-                      outputsBuilder = channels:
-                        systemOutputs channels.${plus.channel or "nixpkgs"};
-                    } else
-                      (eachSystem (args.supportedSystems or defaultSystems)
-                        (system: systemOutputs self.pkgs.${system})))
-                    (optionalAttrs currentLanguage { inherit type doCheck; })
-                    {
-                      ${mif.null currentLanguage "overlay"} = if isApp then
-                        (final: prev: {
-                          # IMPORTANT: Because `attrValues' sorts attribute set items
-                          #            alphabetically, if you add a `default' package,
-                          #            packages whose names start with letters later on
-                          #            in the alphabet will always override earlier
-                          #            packages, such as `valiant' overriding `tailapi'.
-                          ${pname} = final.callPackage
-                            (toPythonApplication (args.extras or { }) pname)
-                            inheritance;
-                        })
-                      else
-                        default;
-                      overlayset.python = fold.set [
-                        (optionalAttrs currentLanguage {
-                          "${pname}-lib" = default;
-                        })
-                        (genLibs (n: v: final: prev:
-                          let cpkg = v.package or v;
-                          in update.python.callPython (fold.set [
-                            { pname = n; }
-                            (args.inheritance or { })
-                            (v.inheritance or { })
-                          ]) n cpkg final prev) (callPackageset.python or { }))
-                        pythonOverlays
-                      ];
-                    }
-                    plus
-                  ];
-                  inherit args;
-                };
-            };
+              }
+              languages
+            ]);
         in fold.set [
           {
             base = base bothOverlays;
@@ -646,7 +671,7 @@ with lfinal; {
                   ${mif.null (!mkFlake) "legacyPackages"} = pkgs;
                   packages = filterPackages system (filters.has.attrs [
                     (subtractLists (attrNames
-                      (inputs.${channelTool}.pkgs or inputs.${channelTool}.legacyPackages or inputs.${channelTool}.packages).${system})
+                      (inputs.${channelTool}.pkgs or inputs.${channelTool}.legacyPackages or inputs.${channelTool}.packages or inputs.valiant.pkgs).${system})
                       (attrNames pkgs))
                     (attrNames self.overlays)
                     {
@@ -924,9 +949,15 @@ with lfinal; {
                             else
                               src) superpkgs.inputs;
                         };
-                        channels =
+                        __channels =
                           mapAttrs (n: v: import v superpkgs.configs.${n})
                           superpkgs.nixpkgs;
+                        _channels = mapAttrs (N: V:
+                          fold.set (mapAttrsToList (n: v: v V V) self.overlays))
+                          __channels;
+                        channels = mapAttrs
+                          (n: mergeAttrs inputs.${n}.legacyPackages.${system})
+                          _channels;
                         pkgs = channels.${channel};
                       in fold.set [
                         { inherit superpkgs; }
@@ -935,40 +966,69 @@ with lfinal; {
                   ({
                     overlays = fold.set [
 
-                      # For some reason, the binary cache isn't hit without these three blocks.
-                      (optionalAttrs base (mapAttrs' (n: v:
-                        nameValuePair "-iron-valiant-${n}" (final: prev:
-                          iron.fold.set (map (pkg:
-                            let
-                              default = inputs.${
-                                  args.baseChannel or channel
-                                }.legacyPackages.${prev.targetPlatform.system}.${pkg};
-                            in {
-                              ${pkg} = default;
-                              "${pkg}Packages" = default.pkgs;
-                            }) (filter (hasPrefix "python") v))
-                          # genAttrs v (flip getAttr inputs.${
-                          #     args.baseChannel or channel
-                          #   }.legacyPackages.${prev.targetPlatform.system})
-                        )) iron.attrs.packages))
+                      # For some reason, the binary cache isn't hit without the following blocks before:
+                      # `(removeAttrs bothOverlays [ "__unfix__" "__extend__" ])'
+                      # NOTE: The `iron-valiant' prefixes are for ordering purposes:
+                      # https://en.wikipedia.org/wiki/ASCII#Printable_characters
+                      (optionalAttrs base (listToAttrs (map (pkg:
+                        let inputChannel = args.baseChannel or channel;
+                        in nameValuePair "!iron-valiant-${pkg}-${inputChannel}"
+                        (final: prev:
+                          let
+                            default =
+                              inputs.${inputChannel}.legacyPackages.${prev.targetPlatform.system}.${pkg};
+                          in {
+                            ${pkg} = default;
+                            "${pkg}Packages" = default.pkgs;
+                          })) (filter (hasPrefix "python")
+                            iron.attrs.packages.python))))
 
-                      (map (group:
-                        (iron.mapAttrNames (n: v: "-iron-valiant-${group}-${n}")
-                          (iron.update.${group}.replace.inputList (final: prev:
-                            inputs.${
-                              args.baseChannel or channel
-                            }.legacyPackages.${prev.stdenv.targetPlatform.system})
-                            (iron.getOfficialOverlays group inputs
+                      # (map (group:
+                      #   (mapAttrs' (n: v:
+                      #     let
+                      #       inputChannel = if (n == "null") then
+                      #         (args.baseChannel or channel)
+                      #       else
+                      #         n;
+                      #     in nameValuePair
+                      #     "#iron-valiant-${group}-${inputChannel}"
+                      #     (iron.update.${group}.replace.inputList.super
+                      #       (final: prev:
+                      #         inputs.${inputChannel}.legacyPackages.${prev.stdenv.targetPlatform.system})
+                      #       (toList v)))
+                      #     (iron.getOfficialOverlays group inputs overlayset)))
+                      #   (attrNames iron.attrs.versions))
+
+                      (let
+                        inputChanneler = n:
+                          if (n == "null") then
+                            (args.baseChannel or channel)
+                          else
+                            n;
+                      in map (group:
+                        (mapAttrsToList (N: V:
+                          iron.mapAttrNames (n: v:
+                            "#iron-valiant-${group}-${inputChanneler N}-${n}")
+                          V) (mapAttrs (n: v:
+                            iron.update.${group}.replace.inputList.attrs
+                            (final: prev:
+                              inputs.${
+                                inputChanneler n
+                              }.legacyPackages.${prev.stdenv.targetPlatform.system})
+                            (toList v)) (iron.getOfficialOverlays group inputs
                               overlayset)))) (attrNames iron.attrs.versions))
 
-                      (iron.mapAttrNames (n: v: "-iron-valiant-general-${n}")
-                        (genAttrs
-                          (iron.getOfficialOverlays "general" inputs overlayset)
-                          (pkg: final: prev: {
-                            ${pkg} = inputs.${
-                                args.baseChannel or channel
-                              }.legacyPackages.${prev.stdenv.targetPlatform.system}.${pkg};
-                          })))
+                      (mapAttrs' (n: v:
+                        let
+                          inputChannel = if (n == "null") then
+                            (args.baseChannel or channel)
+                          else
+                            n;
+                        in nameValuePair "#iron-valiant-general-${inputChannel}"
+                        (final: prev:
+                          genAttrs (toList v) (flip getAttr
+                            inputs.${inputChannel}.legacyPackages.${prev.stdenv.targetPlatform.system})))
+                        (iron.getOfficialOverlays "general" inputs overlayset))
 
                       (removeAttrs bothOverlays [ "__unfix__" "__extend__" ])
 
@@ -1023,7 +1083,8 @@ with lfinal; {
           (mapAttrs (language: v: plus: args:
             mkLanguage (v plus (args // { inherit language; }))) mkLanguages)
         ];
-    in base (makeExtensibleWithCustomName "__extend__" (_: { })) { } "nixpkgs";
+    in base (makeExtensibleWithCustomName "__extend__" (_: { })) { } "nixpkgs"
+    lfinal { };
 
     versionIs = rec {
       # a is older than or equal to b
@@ -1613,25 +1674,37 @@ with lfinal; {
       postCheck = "";
       checkPhase = "";
       doInstallCheck = false;
+      ${
+        if (hasInfix ''"(progn (add-to-list 'load-path \"$LISPDIR\")''
+          (old.postInstall or "")) then
+          "postInstall"
+        else
+          null
+      } = "";
     };
 
     functors.xelf = { __functor = self: x: let xelf = x self; in x xelf; };
 
-    mkPythonPackage = flake: recursiveOverrides: pself:
+    mkPythonPackage = { self, inputs ? { }, package, recursiveOverrides ? [ ] }:
       pkgs@{ mount, python, pythonOlder, poetry-core, setuptools, wheel, rich
       , makePythonPath, buildPythonPackage, hy, hyrule, ... }:
       let
         inherit (iron) functors filters fold pyVersion mkCheckInputs;
-        inherit (pself) pname owner;
+        pname = package.pname or self.pname;
+        owner = package.owner or "syvlorg";
+
+        # `pkgs' overrides `python.pkgs' because the packages in `pkgs'
+        # can be different from the ones in `python.pkgs'
         ppkgs = python.pkgs // pkgs;
-        format = pself.format or toOverride.format;
+        format = package.format or toOverride.format;
         formatIsSetuptools = format == "setuptools";
         formatIsPyproject = format == "pyproject";
         toOverride = {
+          inherit pname;
           doCheck = true;
           disabled = pythonOlder "3.9";
           format = "pyproject";
-          version = pyVersion pself.src;
+          version = pyVersion package.src;
 
           # TODO
           # ${if formatIsSetuptools then "buildPhase" else null} =
@@ -1639,18 +1712,22 @@ with lfinal; {
 
         };
         overrideNames = attrNames toOverride;
-        pselfOverride = iron.getAttrs overrideNames pself;
+        pselfOverride = iron.getAttrs overrideNames package;
         absolute = removeAttrs (let
           a = functors.xelf (alf:
-            mapAttrs (n: v: unique (flatten [ v (pself.${n} or [ ]) ])) {
+            mapAttrs (n: v: unique (flatten [ v (package.${n} or [ ]) ])) {
               buildInputs = [
                 (optional formatIsPyproject poetry-core)
                 (optionals formatIsSetuptools [ setuptools wheel ])
               ];
-              nativeBuildInputs = toList alf.buildInputs;
-              propagatedBuildInputs =
-                [ rich (optionals (flake.type == "hy") [ hy hyrule ]) ];
-              propagatedNativeBuildInputs = toList alf.propagatedBuildInputs;
+              nativeBuildInputs = alf.buildInputs;
+              propagatedBuildInputs = filters.has.list [
+                rich
+                (optionals (self.type == "hy") [ hy hyrule ])
+                (optionals (inputs != { })
+                  (iron.inputPkgsToPackages.python inputs))
+              ] ppkgs;
+              propagatedNativeBuildInputs = alf.propagatedBuildInputs;
             });
         in fold.set [
           a
@@ -1670,12 +1747,12 @@ with lfinal; {
                     !(elem (i.pname or i.name) propagatedNativeBuildInputNames))
                   (old.${p} or [ ])))) (filters.has.list [
                     "pytestCheckHook"
-                    (mkCheckInputs.python { inherit (flake) type parallel; })
-                    (pself.checkInputs or [ ])
+                    (mkCheckInputs.python { inherit (self) type parallel; })
+                    (package.checkInputs or [ ])
                   ] ppkgs);
 
             nativeCheckInputs =
-              flatten [ checkInputs (pself.nativeCheckInputs or [ ]) ];
+              flatten [ checkInputs (package.nativeCheckInputs or [ ]) ];
           })
         ]) recursiveOverrides;
         absoluteNames = attrNames absolute;
@@ -1687,41 +1764,41 @@ with lfinal; {
             PYTHONPATH=${
               makePythonPath (flatten [
                 absolute.propagatedNativeBuildInputs
-                (pself.propagatedNativeBuildInputs or [ ])
+                (package.propagatedNativeBuildInputs or [ ])
               ])
             }:$PYTHONPATH
             python -c "import ${
               replaceStrings [ "-" ] [ "_" ] (concatStringsSep "; import "
-                (flatten [ pname (pself.pythonImportsCheck or [ ]) ]))
+                (flatten [ pname (package.pythonImportsCheck or [ ]) ]))
             }"
           '';
 
           pytestFlagsArray = flatten [
             "--strict-markers"
             "--suppress-no-test-exit-code"
-            (optionals flake.parallel [ "-n" "auto" "--dist" "loadgroup" ])
+            (optionals self.parallel [ "-n" "auto" "--dist" "loadgroup" ])
           ];
           passthru = {
-            format = pself.format or toOverride.format;
-            disabled = pself.disabled or toOverride.disabled;
+            format = package.format or toOverride.format;
+            disabled = package.disabled or toOverride.disabled;
           };
           meta = {
             homepage = "https://github.com/${owner}/${pname}";
 
             # Adapted From: https://github.com/NixOS/nixpkgs/blob/master/pkgs/stdenv/generic/make-derivation.nix#L134-L139
-            position = let pos = unsafeGetAttrPos "pname" pself;
+            position = let pos = unsafeGetAttrPos "pname" package;
             in "${pos.file}:${toString pos.line}";
 
           };
         }) recursiveOverrides;
         recursiveNames = attrNames toOverride;
-        pselfRecursed = iron.getAttrs recursiveNames pself;
+        pselfRecursed = iron.getAttrs recursiveNames package;
       in buildPythonPackage (fold.set [
         absolute
         toOverride
         pselfOverride
         (fold.stringMerge [ toRecurse pselfRecursed ])
-        (removeAttrs pself (flatten [
+        (removeAttrs package (flatten [
           overrideNames
           recursiveNames
           absoluteNames
@@ -1884,7 +1961,7 @@ with lfinal; {
       # Adapted From: https://discourse.nixos.org/t/how-to-add-custom-python-package/536/4
       # And: https://discourse.nixos.org/t/use-multiple-instances-of-prev-python-override/20066/2
       python = {
-        python = pattrs: final: prev:
+        python = attrs: final: prev:
           let
             default' = pythonVersion:
               prev.${pythonVersion}.override (super: {
@@ -1894,13 +1971,13 @@ with lfinal; {
                 pythonAttr = pythonVersion;
                 packageOverrides =
                   composeExtensions (super.packageOverrides or (_: _: { }))
-                  (if (isFunction pattrs) then pattrs else (new: old: pattrs));
+                  (if (isFunction attrs) then attrs else (new: old: attrs));
               });
             # Adapted From: https://github.com/NixOS/nixpkgs/issues/44426#issuecomment-1223613633
             # And: https://github.com/NixOS/nixpkgs/issues/44426#issuecomment-1338223044
             # prev.${pythonVersion} // {
             #   pkgs = prev.${pythonVersion}.pkgs.overrideScope
-            #     (if (isFunction pattrs) then pattrs else (new: old: pattrs));
+            #     (if (isFunction attrs) then attrs else (new: old: attrs));
             # };
             default = default' iron.attrs.versions.python;
           in iron.fold.set [
@@ -1923,28 +2000,29 @@ with lfinal; {
               iron.update.python.python (new: old: {
                 ${name} = if (isFunction value) then (value new old) else value;
               });
-            module = name: value: final:
+            module = name: value:
               iron.update.python.python (new: old: {
                 ${name} = new.toPythonModule
                   (if (isFunction value) then (value new old) else value);
-              }) final;
-            input = name: channel: final: prev:
-              replacements.package name (getPkg.python channel name) final prev;
-            inputList' = channel:
-              map (pkg: final: prev:
-                replacements.input pkg
-                (if (isFunction channel) then (channel final prev) else channel)
-                final prev);
-            inputList = channel:
-              flip genAttrs (pkg: final: prev:
-                replacements.input pkg
-                (if (isFunction channel) then (channel final prev) else channel)
-                final prev);
-            officialInputList = inputs: channel: pkgs:
-              iron.mapAttrNames (n: v: "-iron-valiant-python-${n}")
-              (replacements.inputList (final: prev:
-                inputs.${channel}.legacyPackages.${prev.stdenv.targetPlatform.system})
-                pkgs);
+              });
+            input = name: channel:
+              replacements.package name (getPkg.python channel name);
+            inputList = {
+              attrs = channel:
+                flip genAttrs (pkg: final: prev:
+                  replacements.input pkg (if (isFunction channel) then
+                    (channel final prev)
+                  else
+                    channel) final prev);
+              list = channel: list:
+                attrValues (replacements.inputList.attrs channel list);
+              super = channel: list: final: prev:
+                iron.update.python.python (genAttrs list (getPkg.python
+                  (if (isFunction channel) then
+                    (channel final prev)
+                  else
+                    channel))) final prev;
+            };
             override = name: channel: inputs: func: final: prev:
               replacements.package name
               ((getPkg.python channel name).overridePythonAttrs func) final
@@ -1971,19 +2049,19 @@ with lfinal; {
             ];
           }
         ];
-        callPython = inheritance: name: pkg: final:
+        callPython = inheritance: name: pkg:
           iron.update.python.python (new: old: {
             ${name} = iron.callPackageFilter new.callPackage pkg inheritance;
-          }) final;
-        callPythonFile = inheritance: file: final:
+          });
+        callPythonFile = inheritance: file:
           iron.update.python.python (new: old: {
             ${imports.name { inherit file; }} =
               new.callPackage file inheritance;
-          }) final;
-        package = pkg: func: final: prev:
+          });
+        package = pkg: func:
           iron.update.python.python (new: old: {
             ${pkg} = old.${pkg}.overridePythonAttrs (func new old);
-          }) final prev;
+          });
         packages = dir: final:
           iron.update.python.python (imports.set {
             call = final.python3Pkgs;

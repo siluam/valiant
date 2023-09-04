@@ -76,15 +76,24 @@ let
 
     testSplitRootExample1 = {
       expr = splitRoot /foo/bar;
-      expected = { root = /.; subpath = "./foo/bar"; };
+      expected = {
+        root = /.;
+        subpath = "./foo/bar";
+      };
     };
     testSplitRootExample2 = {
       expr = splitRoot /.;
-      expected = { root = /.; subpath = "./."; };
+      expected = {
+        root = /.;
+        subpath = "./.";
+      };
     };
     testSplitRootExample3 = {
       expr = splitRoot /foo/../bar;
-      expected = { root = /.; subpath = "./bar"; };
+      expected = {
+        root = /.;
+        subpath = "./bar";
+      };
     };
     testSplitRootExample4 = {
       expr = (builtins.tryEval (splitRoot "/foo/bar")).success;
@@ -252,6 +261,7 @@ let
       expected = false;
     };
   };
-in
-  if cases == [] then "Unit tests successful"
-  else throw "Path unit tests failed: ${lib.generators.toPretty {} cases}"
+in if cases == [ ] then
+  "Unit tests successful"
+else
+  throw "Path unit tests failed: ${lib.generators.toPretty { } cases}"

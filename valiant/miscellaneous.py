@@ -25,7 +25,7 @@ from types import ModuleType
 from typing import Iterable
 
 from .path import SuperPath
-from .sh import SH, filter_kwargs, filter_options
+from .sh import *
 
 
 def any_in(iterable, *args):
@@ -466,7 +466,7 @@ def setOpts(opts, directory, directory_defaults):
 def getFlake(
     remove=tuple(),
     directory=Path.cwd(),
-    ignore_stderr=False,
+    ignore_error=False,
     sh=SH,
 ):
     remove = (
@@ -500,11 +500,12 @@ def getFlake(
             expr=normalizeMultiline(
                 f"""
 
-                    with builtins; let
-                        lib = import {resources / "lib"};
-                        flake = lib.traceVal ((builtins.getFlake or import) "{directory}");
+                    with builtins;
+                    with ((builtins.getFlake or import) "{resources / "lib"}").lib;
+                    let
+                        flake = (builtins.getFlake or import) "{directory}";
                         removeNonJSON' = obj:
-                            if ((isFunction obj) || (lib.isDerivation obj)) then
+                            if ((isFunction obj) || (isDerivation obj)) then
                                 null
                             else if (isAttrs obj) then
                                 (mapAttrs (n: removeNonJSON') obj)
@@ -513,9 +514,10 @@ def getFlake(
                             else
                                 obj;
                         removeNonJSON = obj:
-                            removeNonJSON' (removeAttrs obj (lib.flatten [
+                            removeNonJSON' (removeAttrs obj (flatten [
                                 {" ".join(remove)}
-                                lib.all
+                                systems.doubles.all
+                                "outPath"
                             ]));
                         in toJSON (removeNonJSON flake.outputs)
 
@@ -523,12 +525,10 @@ def getFlake(
             ),
             **chooseShKwargsOpts("nixEval", sh),
         )
-        if ignore_stderr or chrooted:
+        if ignore_error or chrooted:
             try:
-                _ = getflake()
-                print(_)
-                return Dict(json.loads(_))
-            except SH.ErrorReturnCode:
+                return Dict(json.loads(getflake()))
+            except Exception:
                 return Dict()
         else:
             return Dict(json.loads(getflake()))
@@ -552,7 +552,7 @@ def collectDirs(
     gf = partial(
         getFlake,
         sh=sh,
-        ignore_stderr=True,
+        ignore_error=True,
         remove=remove,
     )
 

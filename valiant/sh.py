@@ -3,6 +3,7 @@ import shlex
 import weakref
 
 from addict import Dict
+from autoslot import SlotsMeta
 from pathlib import Path
 from rich import print
 from rich.pretty import pprint
@@ -21,7 +22,7 @@ def filter_kwargs(**kwargs):
 # Adapted From:
 # Answer: https://stackoverflow.com/a/74005838/10827766
 # User: https://stackoverflow.com/users/364696/shadowranger
-class SHMeta(type):
+class SHMeta(SlotsMeta):
     def __new__(cls, *args, **kwargs):
         for attr in ("args", "kwargs", "options", "bakery", "baked"):
             setattr(cls, attr, Dict())
@@ -34,16 +35,18 @@ class SHMeta(type):
             return cls(attr)
 
     def _format(cls, command, **kwargs):
-        return cls(*shlex.split(command.format(**kwargs)))
+        return cls(*shlex.split(command.format(**kwargs))) if command else command
 
     def _run(cls, command, **kwargs):
-        return cls._format(command, **kwargs)(**filter_options(**kwargs))
+        return (
+            cls._format(command, **kwargs)(**filter_options(**kwargs))
+            if command
+            else command
+        )
 
 
 class SH(metaclass=SHMeta):
-    __slots__ = [
-        "_" + attr for attr in ("args", "kwargs", "options", "prog", "weakref")
-    ] + ["__weakref__"]
+    __slots__ = ("__weakref__",)
 
     def __init__(
         self,

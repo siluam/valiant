@@ -10,6 +10,7 @@ include = [ "valiant/**/*.py", "valiant/resources/**/*" ]
 python = "^3.10"
 addict = "*"
 ansicolors = "*"
+autoslot = "*"
 black = "*"
 dhall = "*"
 jsonnet = "*"

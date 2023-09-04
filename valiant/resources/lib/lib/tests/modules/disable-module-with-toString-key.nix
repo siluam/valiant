@@ -4,31 +4,21 @@ let
 
   moduleWithKey = {
     key = 123;
-    config = {
-      enable = true;
-    };
+    config = { enable = true; };
   };
-in
-{
+in {
   options = {
     positive = mkOption {
-      type = types.submodule {
-        imports = [
-          ./declare-enable.nix
-          moduleWithKey
-        ];
-      };
-      default = {};
+      type =
+        types.submodule { imports = [ ./declare-enable.nix moduleWithKey ]; };
+      default = { };
     };
     negative = mkOption {
       type = types.submodule {
-        imports = [
-          ./declare-enable.nix
-          moduleWithKey
-        ];
+        imports = [ ./declare-enable.nix moduleWithKey ];
         disabledModules = [ 123 ];
       };
-      default = {};
+      default = { };
     };
   };
 }

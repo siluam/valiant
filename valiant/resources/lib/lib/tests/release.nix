@@ -1,9 +1,10 @@
 { # The pkgs used for dependencies for the testing itself
-  # Don't test properties of pkgs.lib, but rather the lib in the parent directory
-  pkgs ? import ../.. {} // { lib = throw "pkgs.lib accessed, but the lib tests should use nixpkgs' lib path directly!"; },
-  nix ? pkgs.nix,
-  nixVersions ? [ pkgs.nixVersions.minimum nix pkgs.nixVersions.unstable ],
-}:
+# Don't test properties of pkgs.lib, but rather the lib in the parent directory
+pkgs ? import ../.. { } // {
+  lib = throw
+    "pkgs.lib accessed, but the lib tests should use nixpkgs' lib path directly!";
+}, nix ? pkgs.nix
+, nixVersions ? [ pkgs.nixVersions.minimum nix pkgs.nixVersions.unstable ], }:
 
 let
   testWithNix = nix:
@@ -18,13 +19,9 @@ let
           inherit pkgs;
           lib = import ../.;
         })
-        (import ../path/tests {
-          inherit pkgs;
-        })
+        (import ../path/tests { inherit pkgs; })
       ];
-      nativeBuildInputs = [
-        nix
-      ];
+      nativeBuildInputs = [ nix ];
       strictDeps = true;
     } ''
       datadir="${nix}/share"
@@ -57,8 +54,7 @@ let
       echo success > $out/${nix.version}
     '';
 
-in
-  pkgs.symlinkJoin {
-    name = "nixpkgs-lib-tests";
-    paths = map testWithNix nixVersions;
-  }
+in pkgs.symlinkJoin {
+  name = "nixpkgs-lib-tests";
+  paths = map testWithNix nixVersions;
+}

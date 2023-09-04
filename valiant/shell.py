@@ -1,5 +1,6 @@
 import sys
 
+from autoslot import Slots
 from contextlib import contextmanager
 from os import environ, pathsep
 
@@ -13,7 +14,9 @@ from .miscellaneous import (
 from .sh import SH
 
 
-class BaseShell:
+class BaseShell(Slots):
+    __slots__ = ("_" + attr for attr in ("environ", "pythonpath", "sysPath"))
+
     def __init__(
         self,
         g,
@@ -25,7 +28,6 @@ class BaseShell:
         self._pure = pure
         self._pure_prefix = "" if self._pure else "im"
         self._devShell = devShell
-        # TODO: Convert into a function
         self._nix_shell = sh.nix_shell.bake(**chooseShKwargsOpts("nixShell", sh))
         self._nix_shell_pure = sh.nix_shell.bake(
             **chooseShKwargsOpts("nixShellPure", sh)

@@ -2,12 +2,9 @@
 let
   inherit (lib) types mkOption setDefaultModuleLocation evalModules;
   inherit (types) deferredModule lazyAttrsOf submodule str raw enum;
-in
-{
+in {
   options = {
-    deferred = mkOption {
-      type = deferredModule;
-    };
+    deferred = mkOption { type = deferredModule; };
     result = mkOption {
       default = (evalModules { modules = [ config.deferred ]; }).config.result;
     };

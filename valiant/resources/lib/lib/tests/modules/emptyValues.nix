@@ -1,27 +1,18 @@
 { lib, ... }:
-let
-  inherit (lib) types;
+let inherit (lib) types;
 in {
 
   options = {
-    int = lib.mkOption {
-      type = types.lazyAttrsOf types.int;
-    };
-    list = lib.mkOption {
-      type = types.lazyAttrsOf (types.listOf types.int);
-    };
+    int = lib.mkOption { type = types.lazyAttrsOf types.int; };
+    list = lib.mkOption { type = types.lazyAttrsOf (types.listOf types.int); };
     nonEmptyList = lib.mkOption {
       type = types.lazyAttrsOf (types.nonEmptyListOf types.int);
     };
-    attrs = lib.mkOption {
-      type = types.lazyAttrsOf (types.attrsOf types.int);
-    };
-    null = lib.mkOption {
-      type = types.lazyAttrsOf (types.nullOr types.int);
-    };
-    submodule = lib.mkOption {
-      type = types.lazyAttrsOf (types.submodule {});
-    };
+    attrs =
+      lib.mkOption { type = types.lazyAttrsOf (types.attrsOf types.int); };
+    null = lib.mkOption { type = types.lazyAttrsOf (types.nullOr types.int); };
+    submodule =
+      lib.mkOption { type = types.lazyAttrsOf (types.submodule { }); };
   };
 
   config = {

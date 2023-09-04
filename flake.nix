@@ -38,6 +38,10 @@
       flake = false;
     };
     nixpkgs.url = "github:nixos/nixpkgs/nixos-23.05";
+    autoslot = {
+      url = "github:cjrh/autoslot/v2022.12.1";
+      flake = false;
+    };
     poetry2setup = {
       url = "github:syvlorg/poetry2setup";
       flake = false;
@@ -92,13 +96,8 @@
       inherit self inputs;
       pname = "valiant";
       doCheck = true;
-      mkOutputs = iron.mkOutputs.base self.overlays self.pname;
-      overlayset = {
-        official = {
-          general = toList "git";
-          python = toList "black";
-        };
-      };
+      mkOutputs = iron.mkOutputs.base self.overlays self.pname lib { };
+      overlayset.official.python.null = "black";
       overlays = iron.fold.set [
         (iron.mapPassName {
           xonsh = pname: final: prev: {
@@ -141,49 +140,55 @@
       ];
       callPackage = { callPackage, pythonOlder
 
-        , addict, ansicolors, black, dhall-python, jsonnet, more-itertools
-        , orjson, poetry2setup, python-rapidjson, pyyaml, rich-click, sh
-        , xmltodict, xxhash
+        , addict, ansicolors, autoslot, black, dhall-python, jsonnet
+        , more-itertools, orjson, poetry2setup, python-rapidjson, pyyaml
+        , rich-click, sh, xmltodict, xxhash
 
         # Non-Python Dependencies
         , nixfmt, nix, nickel, cue, git }:
-        callPackage (iron.mkPythonPackage self [ ] {
-          inherit (self) pname doCheck;
-          owner = "syvlorg";
-          src = ./.;
-          disabled = pythonOlder "3.11";
-          postPatch = ''
-            substituteInPlace pyproject.toml --replace "poetry2setup = { git = \"https://github.com/syvlorg/poetry2setup.git\", branch = \"master\" }" ""
-            substituteInPlace ${self.pname}/__init__.py --replace "str(resources / \"lib\" / \"lib\")" "\"${inputs.nixpkgs}/lib\""
-          '';
-          # pytestFlagsArray = [ "-vv" ];
+        callPackage (iron.mkPythonPackage {
+          inherit self;
+          package = rec {
+            inherit (self) doCheck;
+            owner = "syvlorg";
+            src = ./.;
+            disabled = pythonOlder "3.11";
+            postPatch = ''
+              substituteInPlace pyproject.toml \
+                --replace "poetry2setup = { git = \"https://github.com/${owner}/poetry2setup.git\", branch = \"master\" }" "" \
+                --replace "rich-click = \"*\"" ""
+              substituteInPlace ${self.pname}/__init__.py --replace "str(resources / \"lib\" / \"lib\")" "\"${inputs.nixpkgs}/lib\""
+            '';
+            # pytestFlagsArray = [ "-vv" ];
 
-          # Adapted From: https://github.com/NixOS/nix/issues/670#issuecomment-1211700127
-          preCheck = "HOME=$(mktemp -d)";
+            # Adapted From: https://github.com/NixOS/nix/issues/670#issuecomment-1211700127
+            preCheck = "HOME=$(mktemp -d)";
 
-          propagatedBuildInputs = [
-            addict
-            ansicolors
-            black
-            dhall-python
-            jsonnet
-            more-itertools
-            orjson
-            poetry2setup
-            python-rapidjson
-            pyyaml
-            rich-click
-            sh
-            xxhash
-            xmltodict
+            propagatedBuildInputs = [
+              addict
+              ansicolors
+              autoslot
+              black
+              dhall-python
+              jsonnet
+              more-itertools
+              orjson
+              poetry2setup
+              python-rapidjson
+              pyyaml
+              rich-click
+              sh
+              xxhash
+              xmltodict
 
-            # Non-Python Dependencies
-            cue
-            git
-            nickel
-            nix
-            nixfmt
-          ];
+              # Non-Python Dependencies
+              cue
+              git
+              nickel
+              nix
+              nixfmt
+            ];
+          };
         }) { };
       callPackageset = {
         callPackages = iron.mapPassName {
@@ -191,6 +196,24 @@
             iron.toPythonApplication { appSrc = "${pname}.py"; } pname;
         };
         python = iron.mapPassName {
+          autoslot = pname:
+            { buildPythonPackage, pytestCheckHook, flit }:
+            buildPythonPackage rec {
+              inherit pname;
+              inherit (Inputs.${pname}) version;
+              format = "pyproject";
+              src = inputs.${pname};
+              buildInputs = [ flit ];
+              nativeBuildInputs = buildInputs;
+              checkInputs = [ pytestCheckHook ];
+              pythonImportsCheck = [ pname ];
+              meta = {
+                description = "Automatic __slots__ for your Python classes";
+                homepage =
+                  "https://github.com/${Inputs.${pname}.owner}/${pname}";
+                license = licenses.asl20;
+              };
+            };
           click-aliases = pname:
             { buildPythonPackage, pythonOlder, click, makePythonPath }:
             buildPythonPackage rec {
@@ -279,7 +302,6 @@
             buildPythonPackage rec {
               inherit pname;
               inherit (Inputs.${pname}) version;
-              # version = "1.3";
               disabled = pythonOlder "3.7";
               src = inputs.${pname};
               nativeBuildInputs = [ pytest sh git ];

@@ -8,6 +8,7 @@ import yaml
 import tomllib
 
 from addict import Dict
+from autoslot import Slots
 from inspect import ismethod
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -25,17 +26,7 @@ from .path import SuperPath
 from .sh import SH
 
 
-class Opts:
-    __slots__ = (
-        "_name",
-        "_sh",
-        "starlark",
-        "bzl",
-        "py",
-        "vflake",
-        "ncl",
-    )
-
+class Opts(Slots):
     def __init__(
         self,
         name,

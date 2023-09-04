@@ -1,5 +1,1 @@
-{ lib, ... }: {
-  options = {
-    result = lib.types.str;
-  };
-}
+{ lib, ... }: { options = { result = lib.types.str; }; }

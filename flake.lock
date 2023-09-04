@@ -1,5 +1,22 @@
 {
   "nodes": {
+    "autoslot": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1671683541,
+        "narHash": "sha256-fG4rRwRubJt2aXChEsMybEKal6LscZI7GA2uwtK5Vtg=",
+        "owner": "cjrh",
+        "repo": "autoslot",
+        "rev": "44b374fb63f428508d665842dd6e72c992b36892",
+        "type": "github"
+      },
+      "original": {
+        "owner": "cjrh",
+        "ref": "v2022.12.1",
+        "repo": "autoslot",
+        "type": "github"
+      }
+    },
     "click-aliases": {
       "flake": false,
       "locked": {
@@ -24,11 +41,11 @@
         "pre-commit-hooks": "pre-commit-hooks"
       },
       "locked": {
-        "lastModified": 1692700763,
-        "narHash": "sha256-pWbQEVSjlDfrrBoHv5XFe+IdYVpJXY8C9Wz7rO98yqU=",
+        "lastModified": 1693830477,
+        "narHash": "sha256-6j1oNRpjGseDbgg6mJ9H3gmX5U+VAubOLV+iFL9WW30=",
         "owner": "cachix",
         "repo": "devenv",
-        "rev": "6b84a85dd5cde41cbf992b6b2445bf25fe0abb21",
+        "rev": "f839f486b98609f3477c0410b31a6f831b390d48",
         "type": "github"
       },
       "original": {
@@ -267,11 +284,11 @@
     },
     "nixpkgs_2": {
       "locked": {
-        "lastModified": 1692794066,
-        "narHash": "sha256-H0aG8r16dj0x/Wz6wQhQxc9V7AsObOiHPaKxQgH6Y08=",
+        "lastModified": 1693771906,
+        "narHash": "sha256-32EnPCaVjOiEERZ+o/2Ir7JH9pkfwJZJ27SKHNvt4yk=",
         "owner": "nixos",
         "repo": "nixpkgs",
-        "rev": "fc944919f743bb22379dddf18dcb72db6cff84aa",
+        "rev": "da5adce0ffaff10f6d0fee72a02a5ed9d01b52fc",
         "type": "github"
       },
       "original": {
@@ -426,6 +443,7 @@
     },
     "root": {
       "inputs": {
+        "autoslot": "autoslot",
         "click-aliases": "click-aliases",
         "devenv": "devenv",
         "dhall-python": "dhall-python",

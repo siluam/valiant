@@ -1,5 +1,1 @@
-{
-  outputs = { self }: {
-    subflakeOutput = 1;
-  };
-}
+{ outputs = { self }: { subflakeOutput = 1; }; }

@@ -2,6 +2,7 @@ import black
 import orjson as json
 
 from addict import Dict
+from autoslot import Slots
 from contextlib import contextmanager
 from itertools import chain
 from more_itertools import intersperse
@@ -9,6 +10,7 @@ from os import chdir
 from pathlib import Path
 from rich.console import Console
 from rich.table import Table
+from sh import ErrorReturnCode
 
 from .miscellaneous import *
 from .path import SuperPath
@@ -16,49 +18,7 @@ from .sh import SH
 from .shell import QuickShell, Shell
 
 
-class Gauntlet:
-    __slots__ = (
-        "all_inputs",
-        "command_post",
-        "command_pre",
-        "currentSystem",
-        "dir",
-        "doCheck",
-        "export_files",
-        "flake",
-        "force",
-        "force_with_lease",
-        "git",
-        "global_post",
-        "global_pre_post_run",
-        "global_pre",
-        "ignored_inputs",
-        "inputs",
-        "list_delimiter",
-        "nix",
-        "opts",
-        "org_export",
-        "org_tangle",
-        "pre_tangle_files",
-        "projectName",
-        "pureshell",
-        "quickshell",
-        "remove",
-        "sh",
-        "shell",
-        "sir",
-        "skip_export",
-        "skip_tangle",
-        "skip_tests",
-        "skip_update",
-        "tangle_files",
-        "testFiles",
-        "group",
-        "type",
-        "updateAll",
-        "verbose",
-    )
-
+class Gauntlet(Slots):
     def __init__(
         self,
         directory,
@@ -103,6 +63,12 @@ class Gauntlet:
             ),
             self.dir,
             [],
+        )
+        self.opts.format = Dict(
+            {
+                k: v | dict(ignore=[SuperPath(self.dir, file) for file in v.ignore])
+                for k, v in self.opts.format.items()
+            }
         )
 
         self.verbose = verbose or self.opts.verbose or 0
@@ -234,20 +200,9 @@ class Gauntlet:
             )
             self.tangle(additional_tangle_files)
 
-        excluded_parts = lambda ext: (
-            str(file)
-            for file in self.dir.rglob("*." + ext)
-            if not any(
-                p
-                for p in (
-                    "directory_templates",
-                    "dt",
-                )
-                if p in file.parts
-            )
-        )
-        self.sh.nixfmt(*excluded_parts("nix"))
-        self.sh.black(*excluded_parts("py"))
+        self.sh.nixfmt(*self.excluded_parts("nix"))
+        if pythons := self.excluded_parts("py"):
+            self.sh.black(*pythons)
 
         if self.skip_export:
             self.export_files = tuple()
@@ -274,13 +229,29 @@ class Gauntlet:
             self.log(f"Gauntlet for {self.dir} initialized!")
         console.print("\n")
 
+    def excluded_parts(self, ext):
+        return [
+            str(file)
+            for file in self.dir.rglob("*." + ext)
+            if not (
+                any(
+                    p
+                    for p in (
+                        "directory_templates",
+                        "dt",
+                    )
+                    if p in file.parts
+                )
+                or file in self.opts.format[ext].ignore
+            )
+        ]
+
     def log(self, *args, **kwargs):
         ...
 
     def notify(self, *args, **kwargs):
         ...
 
-    @property
     def values(self):
         # return {item: getattr(self, item) for item in self.__slots__}
         return dirs(self)
@@ -417,7 +388,7 @@ class Gauntlet:
                                 )
                             ),
                         )
-                    self.sh._run(cmd, **self.values, _fg=True)
+                    self.sh._run(cmd, **self.values(), _fg=True)
 
             pre = self.command_pre if command else self.global_pre
             post = self.command_post if command else self.global_post
@@ -526,7 +497,10 @@ class Gauntlet:
             return self.nix.flake.lock.bake(self.dir, *inputs)
 
     def update(self, all_inputs=False, keys=tuple(), ignores=tuple()):
-        self.mkUpdateCommand(all_inputs=all_inputs, keys=keys, ignores=ignores)()
+        try:
+            self.mkUpdateCommand(all_inputs=all_inputs, keys=keys, ignores=ignores)()
+        except ErrorReturnCode:
+            self.mkUpdateCommand(all_inputs=True)
         self.log_out("Updated", f"inputs from {self.dir}/flake.nix.")
 
     @property
@@ -539,36 +513,36 @@ class Gauntlet:
         return "nothing to commit, working tree clean" not in status
 
     def nix_test(self, pkg, *args, files=tuple(), return_expr=False):
-        if self.opts.test.cmd:
-            ...
+        if self.opts.nix_test.cmd:
+            return self.sh._format(self.opts.nix_test.cmd, **self.values())
         else:
             args = chain(args, self.opts.test.args)
             match self.group:
                 case "python":
-                    expr = normalizeMultiline(
-                        f"""
+                    program = self.opts.test.program or "pytest"
+                    ft = files or ("./.",)
+                    if program == "pytest":
+                        expr = normalizeMultiline(
+                            f"""
 
-                            (builtins.getFlake or import "{self.dir}").pkgs.${{
-                                builtins.currentSystem
-                            }}.python3Packages.{pkg}.overridePythonAttrs (old: {{
-                                pytestFlagsArray = (old.pytestFlagsArray or [ ]) ++ [ {pyArgs} ];
-                            }})
+                                (builtins.getFlake or import "{self.dir}").pkgs.${{
+                                  builtins.currentSystem
+                                }}.python3Packages.{pkg}.overridePythonAttrs (old: {{
+                                  pytestFlagsArray = (old.pytestFlagsArray or [ ]) ++ [
+                                    "{'" "'.join(chain(args, ft))}"
+                                  ];
+                                }})
 
-                        """
-                    )
-                    if return_expr:
-                        return expr
+                            """
+                        )
+                        if return_expr:
+                            return expr
+                        return self.sh.nix.build.bake(
+                            impure=True,
+                            expr=expr,
+                        )
                     else:
-                        program = self.opts.test.program or "pytest"
-                        ft = files or ("./.",)
-                        if program == "pytest":
-                            pyArgs = '"' + '" "'.join(chain(args, ft)) + '"'
-                            return self.sh.nix.build.bake(
-                                impure=True,
-                                expr=expr,
-                            )
-                        else:
-                            ...
+                        ...
                 case "emacs":
                     ...
                 case _:
@@ -576,7 +550,7 @@ class Gauntlet:
 
     def test(self, *args, files=tuple()):
         if self.opts.test.cmd:
-            return self.sh._format(self.opts.test.cmd, **self.values)
+            return self.sh._format(self.opts.test.cmd, **self.values())
         else:
             args = chain(args, self.opts.test.args)
             match self.group:
@@ -611,9 +585,9 @@ class Gauntlet:
                     return self.sh.emacs.bake(
                         *args,
                         batch=True,
-                        eval="\"(require '"
-                        + ')"; "(require \''.join(self.testFiles)
-                        + ')"',
+                        eval="\"(progn (require '"
+                        + ") (require '".join(self.testFiles)
+                        + '))"',
                     )
                 case _:
                     return self.sh(*args)

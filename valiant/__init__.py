@@ -43,9 +43,9 @@ from sh import ErrorReturnCode, CommandNotFound
     invoke_without_command=True,
     context_settings=dict(help_option_names=["-h", "--help"]),
 )
-@click.option("--do-not-prompt", is_flag=True)
 @click.option("--all/--skip-all", "_all", default=True)
 @click.option("--dependencies/--skip-dependencies", default=True)
+@click.option("--do-not-prompt", is_flag=True)
 @click.option("--export/--skip-export", default=True)
 @click.option("--just-export", is_flag=True)
 @click.option("--just-tangle", is_flag=True)
@@ -62,19 +62,22 @@ from sh import ErrorReturnCode, CommandNotFound
 @click.option("-c", "--command-pre", multiple=True)
 @click.option("-D", "--dependency", multiple=True)
 @click.option("-d", "--dirs", multiple=True)
+@click.option("-E", "--working-export-files", multiple=True)
 @click.option(
     "-e",
     "--export-files",
     multiple=True,
     callback=lambda ctx, param, value: map(SuperPath, value),
 )
-@click.option("-E", "--working-export-files", multiple=True)
 @click.option("-F", "--force-with-lease", is_flag=True)
 @click.option("-f", "--format", multiple=True)
+@click.option("-g", "--do-not-prompt-dependencies", is_flag=True)
 @click.option("-G", "--force", is_flag=True)
 @click.option("-I", "--all-inputs", is_flag=True)
 @click.option("-i", "--inputs", multiple=True)
 @click.option("-j", "--ignore-input", multiple=True)
+@click.option("-M", "--replace-nix-config")
+@click.option("-m", "--replace-nix-opts", multiple=True, type=(str, str))
 @click.option("-N", "--nix-config")
 @click.option("-n", "--nix-opts", multiple=True, type=(str, str))
 @click.option(
@@ -92,8 +95,6 @@ from sh import ErrorReturnCode, CommandNotFound
 @click.option("-P", "--global-post", multiple=True)
 @click.option("-p", "--global-pre", multiple=True)
 @click.option("-r", "--remove", multiple=True, help="Remove from flake outputs")
-@click.option("-M", "--replace-nix-config")
-@click.option("-m", "--replace-nix-opts", multiple=True, type=(str, str))
 @click.option(
     "-t",
     "--tangle-files",
@@ -117,6 +118,7 @@ def main(
     dependency,
     dirs,
     do_not_prompt,
+    do_not_prompt_dependencies,
     export_files,
     export,
     force_with_lease,
@@ -154,6 +156,7 @@ def main(
         pass
     else:
         ctx.obj.do_not_prompt = do_not_prompt
+        ctx.obj.do_not_prompt_dependencies = do_not_prompt_dependencies
 
         nixArgs = []
         if offline:
@@ -370,6 +373,7 @@ def main(
             tangle_files=chain(working_tangle_files, tangle_files),
         )
 
+        ctx.obj.gauntlets = dict()
         ctx.obj.dirs = dict()
         dauntlets = {
             d: collectDirs(
@@ -402,9 +406,8 @@ def main(
                 warn(
                     f"""Sorry; directory {k} is not a valiant project, or doesn't have a ".valiant", "flake.org", or "nix.org" file!"""
                 )
-        ctx.obj.gauntlets = tuple(
-            dict.fromkeys(chain.from_iterable(ctx.obj.dirs.values()))
-        )
+            ctx.obj.gauntlets |= gauntlets
+        ctx.obj.gauntlets = tuple(ctx.obj.gauntlets.values())
 
 
 # Adapted from: https://github.com/pallets/click/issues/108#issuecomment-280489786
@@ -422,7 +425,7 @@ def gauntletParams(func):
 @click.argument("fds", nargs=-1, required=False, type=click.UNPROCESSED)
 @click.pass_context
 def add(ctx, fds, _gauntlet):
-    for g in toTuple(_gauntlet if _gauntlet else ctx.obj.gauntlets):
+    for g in toTuple(_gauntlet or ctx.obj.gauntlets):
         with g.process():
             flake = g.dir / "flake.nix"
             if flake.exists():
@@ -460,7 +463,7 @@ def add(ctx, fds, _gauntlet):
 @click.option("-f", "--fds", multiple=True)
 @click.argument("message", required=False)
 def commit(ctx, message, _gauntlet, fds):
-    for g in toTuple(_gauntlet if _gauntlet else ctx.obj.gauntlets):
+    for g in toTuple(_gauntlet or ctx.obj.gauntlets):
         with g.process():
             ctx.invoke(add, fds=fds, _gauntlet=g)
             if g.modified:
@@ -509,7 +512,7 @@ def push(
 ):
     force = force or ctx.obj.force
     force_with_lease = force_with_lease or ctx.obj.force_with_lease
-    for g in toTuple(_gauntlet if _gauntlet else ctx.obj.gauntlets):
+    for g in toTuple(_gauntlet or ctx.obj.gauntlets):
         with g.process():
             if not do_not_push:
                 ctx.invoke(commit, message=message, _gauntlet=g, fds=fds)
@@ -547,13 +550,13 @@ def push(
 def _update(ctx, _gauntlet, inputs, all_inputs, ignore):
     if ctx.obj.skip_update:
         if all_inputs or ctx.obj.all_inputs:
-            for g in toTuple(_gauntlet if _gauntlet else ctx.obj.gauntlets):
+            for g in toTuple(_gauntlet or ctx.obj.gauntlets):
                 if g.opts["update"].enable:
                     with g.process():
                         ctx.invoke(add, _gauntlet=g)
                         g.updateAll()
     else:
-        for g in toTuple(_gauntlet if _gauntlet else ctx.obj.gauntlets):
+        for g in toTuple(_gauntlet or ctx.obj.gauntlets):
             if g.opts["update"].enable:
                 with g.process():
                     ctx.invoke(add, _gauntlet=g)
@@ -578,7 +581,7 @@ def _update(ctx, _gauntlet, inputs, all_inputs, ignore):
 @click.option("-w", "--with-program", is_flag=True)
 @click.pass_context
 def develop(ctx, _gauntlet, devshell, pure, with_program):
-    for g in toTuple(_gauntlet if _gauntlet else ctx.obj.dirs):
+    for g in toTuple(_gauntlet or ctx.obj.dirs):
         with g.process():
             with g.process(command=True):
                 devShell = devshell or g.opts.devShell or ("makefile-" + g.type)
@@ -595,20 +598,42 @@ def develop(ctx, _gauntlet, devshell, pure, with_program):
 
                     """
                 )
-                g.notify("The following dependencies will be built or downloaded:")
-                ctx.invoke(deps, expression=expr)
-                if ctx.obj.do_not_prompt or Confirm.ask(
-                    f"Are the dependencies to be built and downloaded for this development shell acceptable?",
-                    default=False,
-                ):
-                    log(
-                        f"""Entering {g.dir}'s {"" if pure else "im"}pure development shell {devShell}:"""
-                    )
-                    if pure:
+                dwargs = dict(_gauntlet=g, _subcommand="develop")
+                if pure:
+                    ctx.invoke(deps, expression=expr, shell=True, pure=True, **dwargs)
+                    if (
+                        ctx.obj.do_not_prompt
+                        or (
+                            ctx.obj.do_not_prompt_dependencies
+                            and (g not in ctx.obj.dirs)
+                        )
+                        or Confirm.ask(
+                            f"Are the dependencies to be built and downloaded for this pure development shell acceptable?",
+                            default=False,
+                        )
+                    ):
+                        log(
+                            f"""Entering {g.dir}'s pure development shell {devShell}:"""
+                        )
                         sh.nix_shell(expr=expr, pure=True, _fg=True)
-                    else:
+                else:
+                    ctx.invoke(deps, expression=expr, **dwargs)
+                    if (
+                        ctx.obj.do_not_prompt
+                        or (
+                            ctx.obj.do_not_prompt_dependencies
+                            and (g not in ctx.obj.dirs)
+                        )
+                        or Confirm.ask(
+                            f"Are the dependencies to be built and downloaded for this impure development shell acceptable?",
+                            default=False,
+                        )
+                    ):
+                        log(
+                            f"""Entering {g.dir}'s impure development shell {devShell}:"""
+                        )
                         g.nix.develop(f"{g.dir}#{devShell}", _fg=True)
-                    log(f"Exited {g.dir}'s devlopment shell.")
+                log(f"Exited {g.dir}'s devlopment shell.")
 
 
 # Adapted from: https://github.com/pallets/click/issues/108#issuecomment-280489786
@@ -630,7 +655,7 @@ def pkgParams(func):
 @click.argument("command")
 @click.pass_context
 def _shell(ctx, _gauntlet, pkgs, pkg_string, with_pkgs, pure, command):
-    for g in toTuple(_gauntlet if _gauntlet else ctx.obj.dirs):
+    for g in toTuple(_gauntlet or ctx.obj.dirs):
         with g.process():
             with g.process(command=True):
                 # Adapted From:
@@ -649,11 +674,15 @@ def _shell(ctx, _gauntlet, pkgs, pkg_string, with_pkgs, pure, command):
                     with_pkgs=with_pkgs,
                     pure=pure,
                 )
-                g.notify("The following dependencies will be built or downloaded:")
-                ctx.invoke(deps, expression=quickshell(return_expr=True))
-                if ctx.obj.do_not_prompt or Confirm.ask(
-                    f"Are the dependencies to be built and downloaded for this temporary shell acceptable?",
-                    default=False,
+                dwargs = dict(_gauntlet=g, _subcommand="shell")
+                ctx.invoke(deps, expression=quickshell(return_expr=True), **dwargs)
+                if (
+                    ctx.obj.do_not_prompt
+                    or (ctx.obj.do_not_prompt_dependencies and (g not in ctx.obj.dirs))
+                    or Confirm.ask(
+                        f"Are the dependencies to be built and downloaded for this temporary shell acceptable?",
+                        default=False,
+                    )
                 ):
                     if command:
                         g.log_list(
@@ -663,7 +692,7 @@ def _shell(ctx, _gauntlet, pkgs, pkg_string, with_pkgs, pure, command):
                             g.dir,
                         )
                         with quickshell():
-                            sh._run(command, **g.values, _fg=True)
+                            sh._run(command, **g.values(), _fg=True)
                         g.log_out(
                             "Finished running command with", f"packages from {g.dir}."
                         )
@@ -686,15 +715,19 @@ def _shell(ctx, _gauntlet, pkgs, pkg_string, with_pkgs, pure, command):
 @click.option("-r", "--repl", "_repl")
 @click.pass_context
 def repl(ctx, _gauntlet, pure, _repl):
-    for g in toTuple(_gauntlet if _gauntlet else ctx.obj.dirs):
+    for g in toTuple(_gauntlet or ctx.obj.dirs):
         with g.process():
             with g.process(command=True):
                 shell = g.pureshell if pure else g.shell
-                g.notify("The following dependencies will be built or downloaded:")
-                ctx.invoke(deps, expression=shell._expression)
-                if ctx.obj.do_not_prompt or Confirm.ask(
-                    f"Are the dependencies to be built and downloaded for this repl acceptable?",
-                    default=False,
+                dwargs = dict(_gauntlet=g, _subcommand="repl")
+                ctx.invoke(deps, expression=shell._expression, **dwargs)
+                if (
+                    ctx.obj.do_not_prompt
+                    or (ctx.obj.do_not_prompt_dependencies and (g not in ctx.obj.dirs))
+                    or Confirm.ask(
+                        f"Are the dependencies to be built and downloaded for this repl acceptable?",
+                        default=False,
+                    )
                 ):
                     with shell:
                         try:
@@ -804,15 +837,19 @@ def repl(ctx, _gauntlet, pure, _repl):
 @click.option("--pure/--impure", default=True)
 @click.pass_context
 def nix_repl(ctx, _gauntlet, pure):
-    for g in toTuple(_gauntlet if _gauntlet else ctx.obj.dirs):
+    for g in toTuple(_gauntlet or ctx.obj.dirs):
         with g.process():
             with g.process(command=True):
                 shell = g.pureshell if pure else g.shell
-                g.notify("The following dependencies will be built or downloaded:")
-                ctx.invoke(deps, expression=shell._expression)
-                if ctx.obj.do_not_prompt or Confirm.ask(
-                    f"Are the dependencies to be built and downloaded for this nix repl acceptable?",
-                    default=False,
+                dwargs = dict(_gauntlet=g, _subcommand="nix-repl")
+                ctx.invoke(deps, expression=shell._expression, **dwargs)
+                if (
+                    ctx.obj.do_not_prompt
+                    or (ctx.obj.do_not_prompt_dependencies and (g not in ctx.obj.dirs))
+                    or Confirm.ask(
+                        f"Are the dependencies to be built and downloaded for this nix repl acceptable?",
+                        default=False,
+                    )
                 ):
                     with shell:
                         log(f"Entering nix repl in {g.dir}:")
@@ -827,13 +864,17 @@ def nix_repl(ctx, _gauntlet, pure):
 @click.pass_context
 def build(ctx, _gauntlet, pkgs, dry_run):
     pkgs = pkgs or ("default",)
-    for g in toTuple(_gauntlet if _gauntlet else ctx.obj.dirs):
+    for g in toTuple(_gauntlet or ctx.obj.dirs):
         with g.process():
-            g.notify("The following dependencies will be built or downloaded:")
-            ctx.invoke(deps, pkgs=pkgs)
-            if ctx.obj.do_not_prompt or Confirm.ask(
-                f"Are the dependencies to be built and downloaded for the packages being built acceptable?",
-                default=False,
+            dwargs = dict(_gauntlet=g, _subcommand="build")
+            ctx.invoke(deps, pkg=pkgs, **dwargs)
+            if (
+                ctx.obj.do_not_prompt
+                or (ctx.obj.do_not_prompt_dependencies and (g not in ctx.obj.dirs))
+                or Confirm.ask(
+                    f"Are the dependencies to be built and downloaded for the packages being built acceptable?",
+                    default=False,
+                )
             ):
                 g.log_list(pkgs, "Building", "packages from", g.dir)
                 g.nix.build(
@@ -847,7 +888,7 @@ def build(ctx, _gauntlet, pkgs, dry_run):
 @click.argument("args", nargs=-1, type=click.UNPROCESSED)
 @click.pass_context
 def _nix(ctx, _gauntlet, args):
-    for g in toTuple(_gauntlet if _gauntlet else ctx.obj.dirs):
+    for g in toTuple(_gauntlet or ctx.obj.dirs):
         with g.process():
             with g.dir:
                 g.log_list(args, f"Running nix in {g.dir} with", "arguments")
@@ -864,16 +905,30 @@ def _nix(ctx, _gauntlet, args):
 @click.argument("args", nargs=-1, type=click.UNPROCESSED)
 @click.pass_context
 def _nix_shell(ctx, _gauntlet, args):
-    for g in toTuple(_gauntlet if _gauntlet else ctx.obj.dirs):
+    for g in toTuple(_gauntlet or ctx.obj.dirs):
         with g.process():
             with g.dir:
-                g.log_list(args, f"Running a nix-shell in {g.dir} with", "arguments")
-                console.print()
-                console.print()
-                sh.nix_shell(*args, _fg=True)
-                console.print()
-                console.print()
-                g.log_out(f"Successfully ran a nix-shell in {g.dir} with", "arguments.")
+                dwargs = dict(_gauntlet=g, _subcommand="nix-shell")
+                ctx.invoke(deps, shell=True, args=args, **dwargs)
+                if (
+                    ctx.obj.do_not_prompt
+                    or (ctx.obj.do_not_prompt_dependencies and (g not in ctx.obj.dirs))
+                    or Confirm.ask(
+                        f"Are the dependencies to be built and downloaded for this nix-shell acceptable?",
+                        default=False,
+                    )
+                ):
+                    g.log_list(
+                        args, f"Running a nix-shell in {g.dir} with", "arguments"
+                    )
+                    console.print()
+                    console.print()
+                    sh.nix_shell(*args, _fg=True)
+                    console.print()
+                    console.print()
+                    g.log_out(
+                        f"Successfully ran a nix-shell in {g.dir} with", "arguments."
+                    )
 
 
 @main.command(context_settings=dict(ignore_unknown_options=True), name="nix-run")
@@ -882,13 +937,22 @@ def _nix_shell(ctx, _gauntlet, args):
 @click.argument("args", nargs=-1, type=click.UNPROCESSED)
 @click.pass_context
 def _nix_run(ctx, _gauntlet, pkg, args):
-    for g in toTuple(_gauntlet if _gauntlet else ctx.obj.dirs):
+    for g in toTuple(_gauntlet or ctx.obj.dirs):
         with g.process():
-            g.notify("The following dependencies will be built or downloaded:")
-            ctx.invoke(deps, app=f"nix-shell-{pkg}")
-            if ctx.obj.do_not_prompt or Confirm.ask(
-                f"Are the dependencies to be built and downloaded for this application acceptable?",
-                default=False,
+            dwargs = dict(_gauntlet=g, _subcommand="nix-run")
+            ctx.invoke(
+                deps,
+                shell=True,
+                expression=f'((builtins.getFlake or import) "{g.dir}").devShells.{g.currentSystem}.{pkg}',
+                **dwargs,
+            )
+            if (
+                ctx.obj.do_not_prompt
+                or (ctx.obj.do_not_prompt_dependencies and (g not in ctx.obj.dirs))
+                or Confirm.ask(
+                    f"Are the dependencies to be built and downloaded for this application acceptable?",
+                    default=False,
+                )
             ):
                 g.log_list(
                     args,
@@ -910,7 +974,7 @@ def _nix_run(ctx, _gauntlet, pkg, args):
 @click.argument("command")
 @click.pass_context
 def cmd(ctx, command, _gauntlet):
-    for g in toTuple(_gauntlet if _gauntlet else ctx.obj.dirs):
+    for g in toTuple(_gauntlet or ctx.obj.dirs):
         with g.process():
             with g.process(command=True):
                 # TODO
@@ -931,18 +995,12 @@ def _run(ctx, args, _gauntlet, pkg):
           this way, both double quotes and escaped single quotes can be used.
           Eg: `nix run ".#python-"'
     """
-    for g in toTuple(_gauntlet if _gauntlet else ctx.obj.dirs):
+    for g in toTuple(_gauntlet or ctx.obj.dirs):
         with g.process():
             with g.process(command=True):
-                g.notify("The following dependencies will be built or downloaded:")
-                ctx.invoke(deps, app=pkg)
-                if ctx.obj.do_not_prompt or Confirm.ask(
-                    f"Are the dependencies to be built and downloaded for this application acceptable?",
-                    default=False,
-                ):
-                    g.log_list(args, f"Running {g.dir}#{pkg} with", "arguments")
-                    g.nix.run(f"{g.dir}#{pkg}", "--", *args, _fg=True)
-                    log(f"Successfully ran {g.dir}#{pkg} with", "arguments.")
+                g.log_list(args, f"Running {g.dir}#{pkg} with", "arguments")
+                g.nix.run(f"{g.dir}#{pkg}", "--", *args, _fg=True)
+                log(f"Successfully ran {g.dir}#{pkg} with", "arguments.")
 
 
 @main.command()
@@ -951,7 +1009,7 @@ def _run(ctx, args, _gauntlet, pkg):
 @click.option("-P", "--priority")
 @click.pass_context
 def install(ctx, _gauntlet, pkgs, priority):
-    for g in toTuple(_gauntlet if _gauntlet else ctx.obj.dirs):
+    for g in toTuple(_gauntlet or ctx.obj.dirs):
         with g.process():
             env_pkg_string = f"' -E 'f: f.packages.{g.currentSystem}.".join(pkgs)
             profile_pkgs = [f"{g.dir}#{pkg}" for pkg in pkgs]
@@ -960,11 +1018,15 @@ def install(ctx, _gauntlet, pkgs, priority):
 
             # TODO: Ask to remove the pkg and try again?
             try:
-                g.notify("The following dependencies will be built or downloaded:")
-                ctx.invoke(deps, pkgs=pkgs)
-                if ctx.obj.do_not_prompt or Confirm.ask(
-                    f"Are the dependencies to be built and downloaded for the packages to be installed acceptable?",
-                    default=False,
+                dwargs = dict(_gauntlet=g, _subcommand="install")
+                ctx.invoke(deps, pkg=pkgs, **dwargs)
+                if (
+                    ctx.obj.do_not_prompt
+                    or (ctx.obj.do_not_prompt_dependencies and (g not in ctx.obj.dirs))
+                    or Confirm.ask(
+                        f"Are the dependencies to be built and downloaded for the packages to be installed acceptable?",
+                        default=False,
+                    )
                 ):
                     log('Installing using "nix profile"...')
                     g.nix.profile.install(
@@ -1020,7 +1082,8 @@ def install(ctx, _gauntlet, pkgs, priority):
 @main.command(name="remove")
 @click.argument("pkgs", nargs=-1, type=click.UNPROCESSED)
 @click.option("-a", "--all", "_all", is_flag=True)
-def _remove(pkgs, _all):
+@click.pass_context
+def _remove(ctx, pkgs, _all):
     try:
         profilePackages = sh.nix.profile("list")
     except ErrorReturnCode:
@@ -1045,9 +1108,13 @@ def _remove(pkgs, _all):
                     if _all:
                         inner()
                     else:
-                        if ctx.obj.do_not_prompt or Confirm.ask(
-                            f'Would you like to remove the package "{shortPackage}"?',
-                            default=False,
+                        if (
+                            ctx.obj.do_not_prompt
+                            or ctx.obj.do_not_prompt_dependencies
+                            or Confirm.ask(
+                                f'Would you like to remove the package "{shortPackage}"?',
+                                default=False,
+                            )
                         ):
                             inner()
     if envPackages:
@@ -1063,9 +1130,13 @@ def _remove(pkgs, _all):
                     if _all:
                         inner()
                     else:
-                        if ctx.obj.do_not_prompt or Confirm.ask(
-                            f'Would you like to remove the package "{package}"?',
-                            default=False,
+                        if (
+                            ctx.obj.do_not_prompt
+                            or ctx.obj.do_not_prompt_dependencies
+                            or Confirm.ask(
+                                f'Would you like to remove the package "{package}"?',
+                                default=False,
+                            )
                         ):
                             inner()
 
@@ -1076,14 +1147,18 @@ def _remove(pkgs, _all):
 @click.argument("test")
 @click.pass_context
 def touch_test(ctx, _gauntlet, test, pure):
-    for g in toTuple(_gauntlet if _gauntlet else ctx.obj.gauntlets):
+    for g in toTuple(_gauntlet or ctx.obj.gauntlets):
         with g.process():
             shell = g.pureshell if pure else g.shell
-            g.notify("The following dependencies will be built or downloaded:")
-            ctx.invoke(deps, expression=shell._expression)
-            if ctx.obj.do_not_prompt or Confirm.ask(
-                f"Are the dependencies to be built and downloaded for the tests to be touched acceptable?",
-                default=False,
+            dwargs = dict(_gauntlet=g, _subcommand="touch-test")
+            ctx.invoke(deps, expression=shell._expression, **dwargs)
+            if (
+                ctx.obj.do_not_prompt
+                or (ctx.obj.do_not_prompt_dependencies and (g not in ctx.obj.dirs))
+                or Confirm.ask(
+                    f"Are the dependencies to be built and downloaded for the tests to be touched acceptable?",
+                    default=False,
+                )
             ):
                 test = SuperPath(test, strict=True)
                 log(f"Touching {test}...")
@@ -1103,7 +1178,7 @@ def touch_test(ctx, _gauntlet, test, pure):
 @click.argument("message", required=False)
 @click.pass_context
 def quick(ctx, force, force_with_lease, message, _gauntlet, fds, do_not_push):
-    for g in toTuple(_gauntlet if _gauntlet else ctx.obj.gauntlets):
+    for g in toTuple(_gauntlet or ctx.obj.gauntlets):
         with g.process():
             if g.modified:
                 ctx.invoke(
@@ -1136,10 +1211,10 @@ def _super(
     force_with_lease,
     force,
 ):
-    for g in toTuple(_gauntlet if _gauntlet else ctx.obj.gauntlets):
+    for g in toTuple(_gauntlet or ctx.obj.gauntlets):
         with g.process():
             if g.modified:
-                if test and g.opts.super.test:
+                if test or g.opts.super.test:
                     ctx.invoke(super_test, _gauntlet=g)
                 ctx.invoke(
                     push,
@@ -1156,7 +1231,7 @@ def _super(
 @gauntletParams
 @click.pass_context
 def poetry2setup(ctx, _gauntlet):
-    for g in toTuple(_gauntlet if _gauntlet else ctx.obj.gauntlets):
+    for g in toTuple(_gauntlet or ctx.obj.gauntlets):
         pyproject = g.dir / "pyproject.toml"
         if pyproject.exists():
             if Dict(tomllib.loads(pyproject.read_text())).tool.poetry:
@@ -1178,7 +1253,7 @@ def poetry2setup(ctx, _gauntlet):
 @gauntletParams
 @click.pass_context
 def touch_tests(ctx, _gauntlet):
-    for g in toTuple(_gauntlet if _gauntlet else ctx.obj.gauntlets):
+    for g in toTuple(_gauntlet or ctx.obj.gauntlets):
         with g.process():
             tests = [
                 # IMPORTANT: Can't change this `.is_dir()'
@@ -1206,26 +1281,44 @@ def _test(ctx, args, _gauntlet, file, dirs):
         else (ctx.obj.dirs if file or dirs else ctx.obj.gauntlets)
     ):
         with g.process():
-            ctx.invoke(touch_tests, _gauntlet=g)
-            if g.doCheck:
+            if g.doCheck and not g.skip_tests:
+                ctx.invoke(touch_tests, _gauntlet=g)
                 with g.dir:
-                    if args or not g.skip_tests:
-                        g.notify(
-                            "The following dependencies will be built or downloaded:"
+                    dwargs = dict(_gauntlet=g, _subcommand="test")
+                    if g.opts.test:
+                        new_deps = g.opts.test.deps.to_dict()
+                        new_args = chain(new_deps.pop("args", tuple()), args)
+                        ctx.invoke(
+                            deps,
+                            args=new_args,
+                            **new_deps,
+                            **dwargs,
                         )
-                        ctx.invoke(deps, expression=g.pureshell._expression)
-                        if ctx.obj.do_not_prompt or Confirm.ask(
+                    else:
+                        ctx.invoke(
+                            deps,
+                            expression=g.pureshell._expression,
+                            **dwargs,
+                        )
+                    if (
+                        ctx.obj.do_not_prompt
+                        or (
+                            ctx.obj.do_not_prompt_dependencies
+                            and (g not in ctx.obj.dirs)
+                        )
+                        or Confirm.ask(
                             f"Are the dependencies to be built and downloaded for the testing process acceptable?",
                             default=False,
-                        ):
-                            with g.pureshell:
-                                test = g.test(*args, files=file)
-                                log(f"Testing {g.dir} with command $'{test}'...")
-                                with environment(**g.opts.test.env):
-                                    test(_fg=True)
-                                log(f"All tests in {g.dir} completed successfully!")
-                    else:
-                        cprint("Everything built successfully!")
+                        )
+                    ):
+                        with g.pureshell:
+                            test = g.test(*args, files=file)
+                            log(f"Testing {g.dir} with command $'{test}'...")
+                            with environment(**g.opts.test.env):
+                                test(_fg=True)
+                            log(f"All tests in {g.dir} completed successfully!")
+            else:
+                log(f"Testing for {g.dir} has been skipped!")
 
 
 @main.command(name="nix-test", context_settings=dict(ignore_unknown_options=True))
@@ -1241,27 +1334,40 @@ def nix_test(ctx, args, pkg, _gauntlet, file, dirs):
         if _gauntlet
         else (ctx.obj.dirs if file or dirs else ctx.obj.gauntlets)
     ):
-        print(pkg)
         with g.process():
-            ctx.invoke(touch_tests, _gauntlet=g)
-            if g.doCheck:
+            if g.doCheck and not g.skip_tests:
+                ctx.invoke(touch_tests, _gauntlet=g)
                 with g.dir:
                     test = partial(g.nix_test, pkg, *args, files=file)
-                    g.notify("The following dependencies will be built or downloaded:")
-                    ctx.invoke(
-                        deps, expression=test(return_expr=True)
-                    ) if args else ctx.invoke(deps, pkgs=(pkg,))
-                    if ctx.obj.do_not_prompt or Confirm.ask(
-                        f"Are the dependencies to be built and downloaded for the nix testing process acceptable?",
-                        default=False,
+                    dwargs = dict(_gauntlet=g, _subcommand="nix-test")
+                    if g.opts.nix_test:
+                        new_deps = g.opts.nix_test.deps.to_dict()
+                        new_args = chain(new_deps.pop("args", tuple()), args)
+                        ctx.invoke(deps, args=new_args, **new_deps, **dwargs)
+                    else:
+                        ctx.invoke(
+                            deps, expression=test(return_expr=True), **dwargs
+                        ) if args else ctx.invoke(deps, pkg=(pkg,), **dwargs)
+                    if (
+                        ctx.obj.do_not_prompt
+                        or (
+                            ctx.obj.do_not_prompt_dependencies
+                            and (g not in ctx.obj.dirs)
+                        )
+                        or Confirm.ask(
+                            f"Are the dependencies to be built and downloaded for the nix testing process acceptable?",
+                            default=False,
+                        )
                     ):
-                        if args:
+                        if args or g.opts.nix_test:
                             log(f"Testing {pkg} with command $'{test}'...")
-                            with environment(**g.opts.test.env):
+                            with environment(**g.opts.nix_test.env):
                                 test()(_fg=True)
                             log(f"All tests for package {pkg} completed successfully!")
                         else:
                             g.nix.build(f"{g.dir}#{pkg}")
+            else:
+                log(f"Nix testing for {g.dir} has been skipped!")
 
 
 @main.command(name="super-test", context_settings=dict(ignore_unknown_options=True))
@@ -1290,7 +1396,7 @@ def super_test(ctx, file, dirs, pkg, args, _gauntlet):
 )
 @click.pass_context
 def test_native(ctx, args, _gauntlet, file):
-    for g in toTuple(_gauntlet if _gauntlet else ctx.obj.gauntlets):
+    for g in toTuple(_gauntlet or ctx.obj.gauntlets):
         with g.process():
             ctx.invoke(
                 _test,
@@ -1300,14 +1406,18 @@ def test_native(ctx, args, _gauntlet, file):
             )
 
 
-@main.command()
+@main.command(context_settings=dict(ignore_unknown_options=True))
 @gauntletParams
-@click.argument("pkgs", type=click.UNPROCESSED, required=False, nargs=-1)
+@click.option("--subcommand", "_subcommand", hidden=True)
+@click.argument("args", nargs=-1, required=False, type=click.UNPROCESSED)
+@click.option("-p", "--pkg", default=("default",), multiple=True)
+@click.option("-s", "--shell", is_flag=True)
+@click.option("-S", "--store")
+@click.option("-P", "--pure", is_flag=True)
 @click.option("-r", "--root")
 @click.option("-e", "--expression")
 @click.option("-d", "--devshell")
-@click.option("-a", "--app")
-@click.option("-p", "--paths", is_flag=True)
+@click.option("-I", "--paths", is_flag=True)
 @click.option("-t", "--tree", is_flag=True)
 @click.option("-D", "--return-dict", is_flag=True)
 @click.option("--builds/--only-downloaded", is_flag=True, default=True)
@@ -1315,8 +1425,8 @@ def test_native(ctx, args, _gauntlet, file):
 @click.pass_context
 def deps(
     ctx,
-    app,
-    pkgs,
+    args,
+    pkg,
     paths,
     builds,
     downloads,
@@ -1325,31 +1435,45 @@ def deps(
     expression,
     devshell,
     root,
+    shell,
+    pure,
+    store,
     _gauntlet,
+    _subcommand,
 ):
-    pkgs = pkgs or ("default",)
-
     def get_name(path):
         return path.split("-", 1)[1].removesuffix(".drv")
 
     def get_path(path):
         return path.split("  ")[1]
 
-    for g in toTuple(_gauntlet if _gauntlet else ctx.obj.dirs):
-        new_pkgs = (f"{root or g.dir}#{pkg}" for pkg in pkgs)
+    for g in toTuple(_gauntlet or ctx.obj.dirs):
+        if _subcommand:
+            g.notify(
+                f'The following dependencies will be built or downloaded for the "{_subcommand}" command run in {g.dir}:'
+            )
+        new_shell = shell or g.opts.deps.shell
+        new_args = list(chain(args, g.opts.deps.args))
+        new_pure = pure or ("--pure" in new_args) or False
+        new_pkgs = (f"{root or g.dir}#{p}" for p in pkg)
         expression = expression or (
             f'((builtins.getFlake or import) "{g.dir}").devShells.{g.currentSystem}.{devshell}'
             if devshell
-            else f'((builtins.getFlake or import) "{g.dir}").apps.{g.currentSystem}.{app}'
-            if app
             else None
         )
         # nix-store --query --tree $(nix build --dry-run --json 2> /dev/null | jq -r ".[0].drvPath")
         if tree:
+            if new_shell:
+                raise click.UsageError(
+                    "Using the `shell' option with `tree' is not supported!"
+                )
             builder = partial(
-                g.nix.build, dry_run=True, json=True, impure=bool(expression)
+                g.nix.build,
+                dry_run=True,
+                json=True,
+                impure=bool(expression),
             )
-            paths = parse_tree(
+            parsed_paths = parse_tree(
                 sh.nix_store(
                     literal_eval(
                         builder(expr=expression) if expression else builder(*new_pkgs)
@@ -1360,14 +1484,22 @@ def deps(
                 )
             )
         else:
-            builder = partial(
-                g.nix.build,
-                dry_run=True,
-                impure=bool(expression),
-                _err_to_out=True,
-            )
+            kwargs = dict(dry_run=True, _err_to_out=True)
+            if new_shell:
+                builder = partial(sh.nix_shell, *new_args, pure=new_pure, **kwargs)
+            else:
+                builder = partial(
+                    g.nix.build,
+                    impure=bool(expression),
+                    **(dict(store=store) if store else dict()),
+                    **kwargs,
+                )
             output = (
-                builder(expr=expression) if expression else builder(*new_pkgs)
+                builder(expr=expression)
+                if expression
+                else builder()
+                if new_shell
+                else builder(*new_pkgs)
             ).split("\n")
             built = Table(title=f"[{style}]Packages to be built", style=style)
             built.add_column("Packages")

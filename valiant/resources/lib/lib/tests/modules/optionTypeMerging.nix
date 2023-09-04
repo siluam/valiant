@@ -1,12 +1,8 @@
 { config, lib, ... }: {
 
-  options.theType = lib.mkOption {
-    type = lib.types.optionType;
-  };
+  options.theType = lib.mkOption { type = lib.types.optionType; };
 
-  options.theOption = lib.mkOption {
-    type = config.theType;
-  };
+  options.theOption = lib.mkOption { type = config.theType; };
 
   config.theType = lib.mkMerge [
     (lib.types.submodule {
@@ -16,9 +12,7 @@
       };
     })
     (lib.types.submodule {
-      options.str = lib.mkOption {
-        type = lib.types.str;
-      };
+      options.str = lib.mkOption { type = lib.types.str; };
     })
   ];
 
