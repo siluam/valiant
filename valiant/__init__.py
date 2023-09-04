@@ -501,7 +501,7 @@ def commit(ctx, message, _gauntlet, fds):
 @gauntletParams
 @click.option("-f", "--fds", multiple=True)
 @click.option("-n", "--do-not-push", is_flag=True)
-@click.option("-G", "--force", is_flag=True)
+@click.option("--force", is_flag=True)
 @click.option("-F", "--force-with-lease", is_flag=True)
 @click.option("-b", "--branch")
 @click.option("-r", "--remote", default="origin")
@@ -1175,7 +1175,7 @@ def touch_test(ctx, _gauntlet, test, pure):
 @gauntletParams
 @click.option("-n", "--do-not-push", is_flag=True)
 @click.option("-f", "--fds", multiple=True)
-@click.option("-G", "--force", is_flag=True)
+@click.option("--force", is_flag=True)
 @click.option("-F", "--force-with-lease", is_flag=True)
 @click.argument("message", required=False)
 @click.pass_context
@@ -1199,7 +1199,7 @@ def quick(ctx, force, force_with_lease, message, _gauntlet, fds, do_not_push):
 @click.option("--test/--no-tests", default=True)
 @click.option("-n", "--do-not-push", is_flag=True)
 @click.option("-f", "--fds", multiple=True)
-@click.option("-G", "--force", is_flag=True)
+@click.option("--force", is_flag=True)
 @click.option("-F", "--force-with-lease", is_flag=True)
 @click.argument("message", required=False)
 @click.pass_context
