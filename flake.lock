@@ -57,17 +57,17 @@
     "dhall-python": {
       "flake": false,
       "locked": {
-        "lastModified": 1686965692,
-        "narHash": "sha256-WiKVRYlahwr+kdEPt+PcIec5EdsSd2IywI5DjdLMo+0=",
+        "lastModified": 1689895655,
+        "narHash": "sha256-IIyocpdouSHe19cEqSPBD7IeQVfgi8r64WfNm1QPNFY=",
         "owner": "s-zeng",
         "repo": "dhall-python",
-        "rev": "cc14abd1f102959f8d27476514e64f1730b14ecc",
+        "rev": "9d3ca74e67129a29b3e824ae82f6dab8e28e9b52",
         "type": "github"
       },
       "original": {
         "owner": "s-zeng",
         "repo": "dhall-python",
-        "rev": "cc14abd1f102959f8d27476514e64f1730b14ecc",
+        "rev": "9d3ca74e67129a29b3e824ae82f6dab8e28e9b52",
         "type": "github"
       }
     },

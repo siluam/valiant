@@ -72,7 +72,7 @@
     };
     dhall-python = {
       url =
-        "github:s-zeng/dhall-python/cc14abd1f102959f8d27476514e64f1730b14ecc";
+        "github:s-zeng/dhall-python/9d3ca74e67129a29b3e824ae82f6dab8e28e9b52";
       flake = false;
     };
     sh = {
@@ -393,7 +393,7 @@
             { buildPythonPackage, pythonOlder, pytestCheckHook, pylint, flake8
             , pytest-benchmark, hypothesis, autopep8, maturin, perl
             , pytest-runner, rustPlatform, wheel
-            , sha256 ? "sha256-2u9X2W0liw5fvwsb4QOcyV3LWSh02UU3UkIT1UgwlhQ=" }:
+            , sha256 ? "sha256-X+hRk5YITgd6tfV5jqtzvMWlfMXstzl46zN1G9fSwfg=" }:
             buildPythonPackage rec {
               inherit pname;
               inherit (Inputs.${pname}) version;

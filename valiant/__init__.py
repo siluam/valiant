@@ -517,7 +517,9 @@ def push(
             if not do_not_push:
                 ctx.invoke(commit, message=message, _gauntlet=g, fds=fds)
                 if g.modified:
-                    current_branch = g.git("rev-parse", abbrev_ref="HEAD")
+                    current_branch = g.git(
+                        "rev-parse", abbrev_ref="HEAD", _long_sep=None
+                    )
                     if current_branch == "HEAD":
                         if branch:
                             dest = "HEAD:" + branch
