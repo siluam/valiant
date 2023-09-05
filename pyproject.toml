@@ -43,6 +43,7 @@ addopts = [
 	"--strict-markers",
 ]
 markers = [
+	"anyAllIn",
 	"collectDirs",
 	"conf",
 	"configure",

@@ -521,7 +521,7 @@ class Gauntlet(Slots):
         status = self.git.status()
         while not status:
             status = self.git.status()
-        return ("Your branch is ahead of" in status) or (
+        return any_in(status, "Your branch is ahead of", "HEAD detached from") or (
             "nothing to commit, working tree clean" not in status
         )
 

@@ -1343,7 +1343,7 @@ def _test(ctx, args, _gauntlet, file, dirs):
 @click.argument("args", nargs=-1, required=False, type=click.UNPROCESSED)
 @click.option("-f", "--file", multiple=True)
 @click.option("-d", "--dirs", is_flag=True)
-@click.option("-p", "--pkg", default="default")
+@click.option("-p", "--pkg")
 @click.pass_context
 def nix_test(ctx, args, pkg, _gauntlet, file, dirs):
     for g in toTuple(
@@ -1351,6 +1351,7 @@ def nix_test(ctx, args, pkg, _gauntlet, file, dirs):
         if _gauntlet
         else (ctx.obj.dirs if file or dirs else ctx.obj.gauntlets)
     ):
+        pkg = pkg or g.projectName
         with g.process():
             if g.doCheck and not g.skip_tests:
                 ctx.invoke(touch_tests, _gauntlet=g)
@@ -1392,7 +1393,7 @@ def nix_test(ctx, args, pkg, _gauntlet, file, dirs):
 @click.argument("args", nargs=-1, required=False, type=click.UNPROCESSED)
 @click.option("-f", "--file", multiple=True)
 @click.option("-d", "--dirs", is_flag=True)
-@click.option("-p", "--pkg", default="default")
+@click.option("-p", "--pkg")
 @click.pass_context
 def super_test(ctx, file, dirs, pkg, args, _gauntlet):
     for g in toTuple(

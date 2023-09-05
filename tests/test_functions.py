@@ -1,8 +1,10 @@
 from os import environ
 from parametrized import parametrized
-from pytest import fixture, mark, param
+from pytest import fixture, mark
 from tempfile import TemporaryFile
 from valiant.miscellaneous import (
+    any_in,
+    all_in,
     conf_to_dict,
     configure,
     configuring,
@@ -21,6 +23,32 @@ from valiant.miscellaneous import (
     update,
     updateWithStrings,
 )
+
+
+@mark.anyAllIn
+class TestAnyAllIn:
+    def test_all(self):
+        assert all_in(range(10), 0, 1, 2, 3, 4, 5, 6, 7, 8, 9)
+
+    def test_any(self):
+        assert any_in(range(10), 0, 2, 4, 6, 8, 10, 12, 14, 16, 18)
+
+    def test_not_all(self):
+        assert not all_in(range(10), 0, 2, 4, 6, 8, 10, 12, 14, 16, 18)
+
+    def test_not_any(self):
+        assert not any_in(range(10), 10, 11, 12, 13, 14, 15, 16, 17, 18, 19)
+
+    def test_not_in_all(self):
+        assert all_in(range(10), 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, not_in=True)
+
+    def test_not_in_any(self):
+        assert any_in(range(10), 0, 2, 4, 6, 8, 10, 12, 14, 16, 18, not_in=True)
+
+    @parametrized
+    @mark.xfail(raises=TypeError)
+    def test_none(self, func=(any_in, all_in)):
+        assert func()
 
 
 @mark.getFuncDefaults

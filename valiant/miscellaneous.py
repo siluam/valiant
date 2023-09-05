@@ -28,12 +28,24 @@ from .path import SuperPath
 from .sh import *
 
 
-def any_in(iterable, *args):
-    return any(arg in iterable for arg in args)
+def any_in(iterable, *args, not_in=False):
+    if not args:
+        raise TypeError("any_in() takes at least two argument (1 given)")
+    if not_in:
+        # Return True if any of the items in args are missing
+        return any(arg not in iterable for arg in args)
+    else:
+        return any(arg in iterable for arg in args)
 
 
-def all_in(iterable, *args):
-    return all(arg in iterable for arg in args)
+def all_in(iterable, *args, not_in=False):
+    if not args:
+        raise TypeError("all_in() takes at least two argument (1 given)")
+    if not_in:
+        # Return True if all of the items in args are missing
+        return all(arg not in iterable for arg in args)
+    else:
+        return all(arg in iterable for arg in args)
 
 
 def dirs(obj):
