@@ -532,7 +532,7 @@ def push(
             if not do_not_push:
                 ctx.invoke(commit, message=message, _gauntlet=g, fds=fds)
                 if g.modified:
-                    git = g.git.push.bake(
+                    pusher = g.git.push.bake(
                         remote,
                         force=force,
                         force_with_lease=force_with_lease,
@@ -547,23 +547,25 @@ def push(
                             log(
                                 f'Pushing repository {g.dir} to the "{dest}" branch of "{remote}"...'
                             )
-                            git.push(dest)
+                            pusher(dest)
                         else:
                             try:
                                 try_dest = "HEAD:main"
                                 log(
                                     f'Pushing repository {g.dir} to the "{try_dest}" branch of "{remote}"...'
                                 )
-                                git.push(try_dest)
+                                pusher(try_dest)
                             except ErrorReturnCode:
                                 dest = "HEAD:master"
                                 log(
                                     f'Pushing to "{try_dest}" failed; attempting to push repository to the "{dest}" branch...'
                                 )
-                                git.push(dest)
+                                pusher(dest)
                     else:
                         dest = branch or current_branch
                     log(f"Pushed repository {g.dir}.")
+                else:
+                    log(f"{g.dir} has not been modified; repository was not pushed.")
 
 
 @main.command(name="update")
