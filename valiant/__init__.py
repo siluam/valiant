@@ -222,8 +222,9 @@ def main(
                     ),
                 )
 
-            def _print(self, p, **kwargs):
-                if verbose > 1:
+            def _print(self, p, _verbose=None, **kwargs):
+                print_verbose = verbose if _verbose is None else _verbose
+                if print_verbose > 1:
                     console.log(
                         log_indent + f'Now running "sh" command: {p}', style=style
                     )
@@ -443,7 +444,9 @@ def add(ctx, fds, _gauntlet):
                                     prefixEndsWithFile = prefix.endswith("file:")
                                     git = sh.git.bake(C=SuperPath(split[1]))
                                     try:
-                                        remote = git.remote("get-url", "origin")
+                                        remote = git.remote(
+                                            "get-url", "origin", _verbose=0
+                                        )
                                     except ErrorReturnCode:
                                         pass
                                     else:
@@ -563,6 +566,10 @@ def push(
                                 pusher(dest)
                     else:
                         dest = branch or current_branch
+                        log(
+                            f'Pushing repository {g.dir} to the "{dest}" branch of "{remote}"...'
+                        )
+                        pusher(dest)
                     log(f"Pushed repository {g.dir}.")
                 else:
                     log(f"{g.dir} has not been modified; repository was not pushed.")

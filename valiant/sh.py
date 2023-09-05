@@ -358,6 +358,7 @@ class SH(metaclass=SHMeta):
         *args,
         **kwargs,
     ):
-        self._print(p := self._build(*args, **kwargs))
+        _verbose = kwargs.pop("_verbose", None)
+        self._print(p := self._build(*args, **kwargs), _verbose=_verbose, **kwargs)
         if output := p():
             return output.strip()
