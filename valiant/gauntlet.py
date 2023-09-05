@@ -521,7 +521,9 @@ class Gauntlet(Slots):
         status = self.git.status()
         while not status:
             status = self.git.status()
-        return "nothing to commit, working tree clean" not in status
+        return ("Your branch is ahead of" in status) or (
+            "nothing to commit, working tree clean" not in status
+        )
 
     def nix_test(self, pkg, *args, files=tuple(), return_expr=False):
         if self.opts.nix_test.cmd:
