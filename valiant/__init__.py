@@ -392,11 +392,11 @@ def main(
             gauntlets = {
                 d: Gauntlet(
                     directory=d,
-                    flake=g.flake,
                     opts=update(ctx.obj.opts, g.opts),
                     command_pre=command_pre if d in ctx.obj.dirs else tuple(),
                     command_post=command_post if d in ctx.obj.dirs else tuple(),
                     **gKwargs,
+                    **(dict(flake=g.flake) if g.flake else dict(no_flake=True)),
                 )
                 for d, g in v.items()
             }
@@ -437,18 +437,33 @@ def add(ctx, fds, _gauntlet):
                         with tmpflake.open() as input:
                             for line in input:
                                 split = line.split('"')
-                                if line.split("/")[0].endswith("file:") and (
-                                    len(split) > 1
-                                ):
+                                if len(split) > 1:
+                                    prefix = split[1].split("/")[0]
+                                    prefixIsFile = prefix == "file:"
+                                    prefixEndsWithFile = prefix.endswith("file:")
                                     git = sh.git.bake(C=SuperPath(split[1]))
-                                    split[1] = (
-                                        git.remote("get-url", "origin")
-                                        .replace(":", "/")
-                                        .replace("git@", "git+https://")
-                                    )
-                                    output.write('"'.join(split))
-                                else:
-                                    output.write(line)
+                                    try:
+                                        remote = git.remote("get-url", "origin")
+                                    except ErrorReturnCode:
+                                        pass
+                                    else:
+                                        if remote.startswith("git@"):
+                                            remote = remote.replace(":", "/")
+                                            if prefixIsFile:
+                                                split[1] = remote.replace(
+                                                    "git@", "https://"
+                                                )
+                                            elif prefixEndsWithFile:
+                                                split[1] = remote.replace(
+                                                    "git@", "git+https://"
+                                                )
+                                        else:
+                                            if prefixIsFile:
+                                                split[1] = remote
+                                            elif prefixEndsWithFile:
+                                                split[1] = "git+" + remote
+                                        line = '"'.join(split)
+                                output.write(line)
                     except Exception as e:
                         tmpflake.copy(flake)
                         raise type(e)(e) from e

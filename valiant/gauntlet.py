@@ -29,6 +29,7 @@ class Gauntlet(Slots):
         currentSystem="x86_64-linux",
         export_files=tuple(),
         flake=None,
+        no_flake=False,
         force=False,
         force_with_lease=False,
         global_post=tuple(),
@@ -46,6 +47,8 @@ class Gauntlet(Slots):
         verbose=0,
     ):
         self.list_delimiter = "\n\t\t"
+
+        self.no_flake = no_flake
 
         self.dir = SuperPath(directory)
         self.sir = str(self.dir)
@@ -127,7 +130,7 @@ class Gauntlet(Slots):
             )
             self.tangle(self.pre_tangle_files)
 
-        if not self.skip_update:
+        if not (self.skip_update or self.no_flake):
             if (lockfile := self.dir / "flake.lock").exists():
                 self.inputs = Dict(
                     json.loads(lockfile.read_text())
@@ -139,10 +142,20 @@ class Gauntlet(Slots):
                     json.loads(lockfile.read_text())
                 ).nodes.root.inputs.keys()
 
-        self.flake = flake or getFlake(
-            sh=self.sh,
-            directory=self.dir,
+        self.default_flake = Dict(
+            pname=self.dir.name,
+            type="general",
+            group="general",
+            doCheck=False,
+            testFiles=None,
         )
+        if self.no_flake:
+            self.flake = self.default_flake
+        else:
+            self.flake = flake or getFlake(
+                sh=self.sh,
+                directory=self.dir,
+            )
 
         table = Table(title=f"[{style}]Ensured Variables", style=style)
         for column in ("Name", "Value"):
@@ -151,10 +164,9 @@ class Gauntlet(Slots):
         self.log("Setting ensured variables...")
 
         if self.skip_tests:
-            self.doCheck = False
-            self.group = self.type = "general"
-            self.projectName = self.dir.name
-            self.testFiles = None
+            self.projectName = self.default_flake.pname
+            for attr in ("type", "doCheck", "group", "testFiles"):
+                setattr(self, attr, self.default_flake[attr])
         else:
             self.projectName = self.flake.pname
             self.type = self.flake.type
@@ -200,9 +212,8 @@ class Gauntlet(Slots):
             )
             self.tangle(additional_tangle_files)
 
-        self.sh.nixfmt(*self.excluded_parts("nix"))
-        if pythons := self.excluded_parts("py"):
-            self.sh.black(*pythons)
+        self.sh.nixfmt(*self.excluded_parts("nix"), quiet=True, _ok_code=(0, 1))
+        self.sh.black(*self.excluded_parts("py"), quiet=True, _ok_code=(0, 1, 123))
 
         if self.skip_export:
             self.export_files = tuple()
@@ -230,7 +241,7 @@ class Gauntlet(Slots):
         console.print("\n")
 
     def excluded_parts(self, ext):
-        return [
+        return (
             str(file)
             for file in self.dir.rglob("*." + ext)
             if not (
@@ -244,7 +255,7 @@ class Gauntlet(Slots):
                 )
                 or file in self.opts.format[ext].ignore
             )
-        ]
+        )
 
     def log(self, *args, **kwargs):
         ...
